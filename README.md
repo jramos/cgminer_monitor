@@ -1,6 +1,6 @@
 # CgminerMonitor
 
-A monitor for cgminer instances.
+A monitor for cgminer instances. It periodically captures API command output to a MongoDB.
 
 ## Requirements
 
