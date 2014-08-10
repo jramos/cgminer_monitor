@@ -1,4 +1,4 @@
-development:
+production:
   sessions:
     default:
       database: cgminer_monitor
