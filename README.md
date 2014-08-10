@@ -1,6 +1,6 @@
 # cgminer_monitor
 
-A monitor for cgminer.
+A monitor for cgminer instances.
 
 ## Contributing
 
