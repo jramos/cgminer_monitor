@@ -1,3 +1,4 @@
+require 'cgminer_api_client'
 require 'mongoid'
 require 'rails'
 
