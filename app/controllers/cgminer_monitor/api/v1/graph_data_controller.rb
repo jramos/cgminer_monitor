@@ -18,8 +18,8 @@ module CgminerMonitor
         def miner_hashrate
           miner_id = params[:miner_id] ? params[:miner_id].to_i : nil
 
-          if miner_id
-            response = summaries.collect do |summary|
+          response = if miner_id
+            summaries.collect do |summary|
               [
                 summary[:created_at].to_i,
                 (summary[:results][miner_id].first[:ghs_5s] rescue nil)
