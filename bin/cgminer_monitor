@@ -1,0 +1,13 @@
+#!/usr/bin/env ruby
+
+$LOAD_PATH.unshift("#{File.dirname(__FILE__)}/../lib/")
+
+require 'cgminer_monitor'
+
+logger = CgminerMonitor::Logger.new
+
+while true do
+  documents = logger.log!
+  puts "log successful; #{documents.inspect}" if ARGV.include?('--debug')
+  sleep(60)
+end
