@@ -13,5 +13,6 @@
 *.a
 mkmf.log
 
+/log/*.log
 config/miners.yml
 config/mongoid.yml

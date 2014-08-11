@@ -3,11 +3,23 @@
 $LOAD_PATH.unshift("#{File.dirname(__FILE__)}/../lib/")
 
 require 'cgminer_monitor'
+require 'cgminer_monitor/daemon'
 
-logger = CgminerMonitor::Logger.new
+puts "USAGE: cgminer_monitor [options] start|stop" unless ARGV.last == 'start' || ARGV.last == 'stop'
 
-while true do
-  documents = logger.log!
-  puts "log successful; #{documents.inspect}" if ARGV.include?('--debug')
-  sleep(60)
+if ARGV.last == 'start'
+  $0 = "cgminer_monitor"
+  CgminerMonitor::Daemon.start(fork)
+  Signal.trap("HUP")  { exit }
+  Signal.trap("INT")  { exit }
+  Signal.trap("QUIT") { exit }
+
+  @logger = CgminerMonitor::Logger.new
+
+  loop do
+    @logger.log!
+    sleep(60)
+  end
+elsif ARGV.last == 'stop'
+  CgminerMonitor::Daemon.stop
 end
