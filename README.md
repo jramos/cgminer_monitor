@@ -1,6 +1,6 @@
 # CgminerMonitor
 
-A monitor for cgminer instances. It periodically captures device, status and summary information to MongoDB.
+A monitor for cgminer instances. It periodically captures device, status and summary information to MongoDB. It also provides a Rails engine to allow easy integration.
 
 ## Requirements
 
