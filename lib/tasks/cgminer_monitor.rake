@@ -1,5 +1,3 @@
-require 'rspec/core/rake_task'
-
 namespace :cgminer_monitor do
   require 'cgminer_monitor'
 
