@@ -9,8 +9,8 @@ module CgminerMonitor
             [
               summary[:created_at].to_i,
               summary[:results].collect do |miner_result|
-                miner_result.first[:ghs_5s]
-              end.sum
+                miner_result.first[:ghs_5s] rescue nil
+              end.compact.sum
             ]
           end
 
