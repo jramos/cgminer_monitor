@@ -3,8 +3,6 @@ module CgminerMonitor
     module V1
       class GraphDataController < ActionController::Base
         def local_hashrate
-          summaries = CgminerMonitor::Document::Summary.where(:created_at.gt => created_at_from_range)
-
           response = summaries.collect do |summary|
             [
               summary[:created_at].to_i,
@@ -17,7 +15,26 @@ module CgminerMonitor
           render :json => response.as_json
         end
 
+        def miner_hashrate
+          miner_id = params[:miner_id] ? params[:miner_id].to_i : nil
+
+          if miner_id
+            response = summaries.collect do |summary|
+              [
+                summary[:created_at].to_i,
+                (summary[:results][miner_id].first[:ghs_5s] rescue nil)
+              ] if summary[:results][miner_id]
+            end
+          end
+
+          render :json => response.as_json
+        end
+
         private
+
+        def summaries
+          CgminerMonitor::Document::Summary.where(:created_at.gt => created_at_from_range)
+        end
 
         def created_at_from_range
           case params[:range]

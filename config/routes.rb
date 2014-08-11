@@ -4,6 +4,7 @@ CgminerMonitor::Engine.routes.draw do
       namespace :v1 do
         namespace :graph_data do
           get 'local_hashrate'
+          get 'miner_hashrate'
         end
       end
     end
