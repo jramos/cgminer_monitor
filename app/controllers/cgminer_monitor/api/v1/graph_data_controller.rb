@@ -9,11 +9,8 @@ module CgminerMonitor
             [
               summary[:created_at].to_i,
               summary[:results].collect do |miner_result|
-                [
-                  miner_result.first[:ghs_5s],
-                  miner_result.first[:ghs_av],
-                ]
-              end
+                miner_result.first[:ghs_5s]
+              end.sum
             ]
           end
 
