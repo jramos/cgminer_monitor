@@ -33,6 +33,16 @@ module CgminerMonitor
       false
     end
  
+    def self.status(pidfile = 'tmp/pids/cgminer_monitor.pid')
+      begin
+        opid = open(pidfile).read.strip.to_i
+        Process.getpgid(opid)
+        :running
+      rescue
+        :stopped
+      end
+    end
+
     private
 
     # Attempts to write the pid of the forked process to the pid file.
