@@ -1,9 +1,6 @@
 module CgminerMonitor
   module Document
-    class Pools
-      include Mongoid::Document
-
-      index({ created_at: 1 }, { unique: true })
+    class Pools < Log
     end
   end
 end

@@ -1,9 +1,6 @@
 module CgminerMonitor
   module Document
-    class Summary
-      include Mongoid::Document
-
-      index({ created_at: 1 }, { unique: true })
+    class Summary < Log
     end
   end
 end

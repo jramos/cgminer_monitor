@@ -1,3 +1,4 @@
+require 'cgminer_monitor/document/log'
 require 'cgminer_monitor/document/devs'
 require 'cgminer_monitor/document/pools'
 require 'cgminer_monitor/document/stats'
