@@ -82,7 +82,13 @@ Endpoints:
 
 Data point format:
 
-    [timestamp, avg_hashrate, pool_rejected_hashrate, pool_stale_hashrate, hardware_error_hashrate]
+    [
+        timestamp,
+        avg_hashrate,
+        pool_rejected_hashrate,
+        pool_stale_hashrate,
+        hardware_error_hashrate
+    ]
 
 ##### Temperatures
 
