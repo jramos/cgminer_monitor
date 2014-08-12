@@ -10,8 +10,32 @@ module CgminerMonitor
                 miner_result.first[:ghs_5s].round(2) rescue 0
               end.sum,
               summary[:results].collect do |miner_result|
+                (miner_result.first[:ghs_5s] * miner_result.first[:'pool_rejected%'] / 100).round(2) rescue 0
+              end.sum,
+              summary[:results].collect do |miner_result|
                 (miner_result.first[:ghs_5s] * miner_result.first[:'device_hardware%'] / 100).round(2) rescue 0
               end.sum
+            ]
+          end
+
+          render :json => response.as_json
+        end
+
+        def local_temperature
+          response = devs.collect do |device|
+            temperatures = device[:results].collect do |miner_result|
+              miner_result.first[:temperature] rescue nil
+            end.compact
+
+            min_temp = temperatures.min.round(2) rescue nil
+            avg_temp = (temperatures.sum / temperatures.count).round(2) rescue nil
+            max_temp = temperatures.max.round(2) rescue nil
+
+            [
+              device[:created_at].to_i,
+              min_temp,
+              avg_temp,
+              max_temp
             ]
           end
 
@@ -27,8 +51,35 @@ module CgminerMonitor
               [
                 summary[:created_at].to_i,
                 (miner_summary[:ghs_5s].round(2) rescue nil),
+                ((miner_summary[:ghs_5s] * miner_summary[:'pool_rejected%'] / 100).round(2) rescue nil),
                 ((miner_summary[:ghs_5s] * miner_summary[:'device_hardware%'] / 100).round(2) rescue nil)
               ] if summary[:results][miner_id]
+            end
+          end
+
+          render :json => response.as_json
+        end
+
+        def miner_temperature
+          miner_id = params[:miner_id] ? params[:miner_id].to_i : nil
+
+          response = if miner_id
+            devs.collect do |device|
+              miner_devs = device[:results][miner_id]
+              temperatures = miner_devs.collect do |dev_result|
+                dev_result[:temperature] rescue nil
+              end.compact
+
+              min_temp = temperatures.min.round(2) rescue nil
+              avg_temp = (temperatures.sum / temperatures.count).round(2) rescue nil
+              max_temp = temperatures.max.round(2) rescue nil
+
+              [
+                device[:created_at].to_i,
+                min_temp,
+                avg_temp,
+                max_temp
+              ] if device[:results][miner_id]
             end
           end
 
@@ -39,6 +90,10 @@ module CgminerMonitor
 
         def summaries
           CgminerMonitor::Document::Summary.where(:created_at.gt => created_at_from_range)
+        end
+
+        def devs
+          CgminerMonitor::Document::Devs.where(:created_at.gt => created_at_from_range)
         end
 
         def created_at_from_range

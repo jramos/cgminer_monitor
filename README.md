@@ -71,15 +71,29 @@ Update your ``config/routes.rb`` file to mount the engine:
 
 #### Graph Data
 
-These endpoints return the previous hour's worth of hashrate data as a JSON array, with each data point being represented as ``[timestamp, avg_hashrate, hardware_error_hashrate]``.
+Each endpoint returns the previous hour's worth of data as a JSON array of data points.
 
-##### Aggregate hashrate for the mining pool
+##### Hashrates
+
+Endpoints:
 
 * ``/cgminer_monitor/api/v1/graph_data/local_hashrate.json``
-
-##### Hashrate for an individual miner
-
 * ``/cgminer_monitor/api/v1/graph_data/miner_hashrate.json?miner_id=<miner-id>``
+
+Data point format:
+
+    [timestamp, avg_hashrate, pool_rejected_hashrate, hardware_error_hashrate]
+
+##### Temperatures
+
+Endpoints:
+
+* ``/cgminer_monitor/api/v1/graph_data/local_temperature.json``
+* ``/cgminer_monitor/api/v1/graph_data/miner_temperature.json?miner_id=<miner-id>``
+
+Data point format:
+
+    [timestamp, min_temp, avg_temp, max_temp]
 
 ## Contributing
 
