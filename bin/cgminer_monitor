@@ -3,7 +3,6 @@
 $LOAD_PATH.unshift("#{File.dirname(__FILE__)}/../lib/")
 
 require 'cgminer_monitor'
-require 'cgminer_monitor/daemon'
 
 unless ['start','stop','status'].include?(ARGV.last)
   puts "USAGE: cgminer_monitor [options] start|stop|status"

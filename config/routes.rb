@@ -2,6 +2,8 @@ CgminerMonitor::Engine.routes.draw do
   namespace :cgminer_monitor do
     namespace :api do
       namespace :v1 do
+        get 'ping' => 'ping#index'
+
         namespace :graph_data do
           get 'local_availability'
           get 'local_hashrate'

@@ -2,6 +2,7 @@ require 'cgminer_api_client'
 require 'mongoid'
 require 'rails'
 
+require 'cgminer_monitor/daemon'
 require 'cgminer_monitor/document'
 require 'cgminer_monitor/engine'
 require 'cgminer_monitor/logger'

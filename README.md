@@ -61,13 +61,26 @@ See [cgminer\_api\_client](https://github.com/jramos/cgminer_api_client#configur
 
 Add the following to your ``Gemfile``:
 
-    gem 'cgminer_monitor', '~> 0.0.11'
+    gem 'cgminer_monitor', '~> 0.0.12'
 
 Update your ``config/routes.rb`` file to mount the engine:
 
     mount CgminerMonitor::Engine => '/'
 
 ### API Endpoints
+
+#### Ping
+
+Checks the status of the cgminer_monitor process. Response ``status`` element will either be "``running``" or "``stopped``".
+
+* ``/cgminer_monitor/api/v1/ping.json``
+
+Example response:
+
+    {
+        "timestamp": 1407879277,
+        "status": "running"
+    }
 
 #### Graph Data
 
@@ -80,7 +93,7 @@ Endpoints:
 * ``/cgminer_monitor/api/v1/graph_data/local_hashrate.json``
 * ``/cgminer_monitor/api/v1/graph_data/miner_hashrate.json?miner_id=<miner-id>``
 
-Data point format:
+Data point response format:
 
     [
         timestamp,
@@ -97,7 +110,7 @@ Endpoints:
 * ``/cgminer_monitor/api/v1/graph_data/local_temperature.json``
 * ``/cgminer_monitor/api/v1/graph_data/miner_temperature.json?miner_id=<miner-id>``
 
-Data point format:
+Data point response format:
 
     [
         timestamp,
@@ -113,7 +126,7 @@ Endpoints:
 * ``/cgminer_monitor/api/v1/graph_data/local_availability.json``
 * ``/cgminer_monitor/api/v1/graph_data/miner_availability.json?miner_id=<miner-id>``
 
-Data point format:
+Data point response format:
 
     [
         timestamp,
