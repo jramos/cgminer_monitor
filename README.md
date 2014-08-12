@@ -99,7 +99,12 @@ Endpoints:
 
 Data point format:
 
-    [timestamp, min_temp, avg_temp, max_temp]
+    [
+        timestamp,
+        min_temp,
+        avg_temp,
+        max_temp
+    ]
 
 ## Contributing
 
