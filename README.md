@@ -61,7 +61,7 @@ See [cgminer\_api\_client](https://github.com/jramos/cgminer_api_client#configur
 
 Add the following to your ``Gemfile``:
 
-    gem 'cgminer_monitor', '~> 0.0.5'
+    gem 'cgminer_monitor', '~> 0.0.6'
 
 Update your ``config/routes.rb`` file to mount the engine:
 
