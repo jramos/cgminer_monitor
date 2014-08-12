@@ -73,11 +73,11 @@ Update your ``config/routes.rb`` file to mount the engine:
 
 These endpoints return the previous hour's worth of hashrate data as a JSON array, with each data point being represented as ``[timestamp, avg_hashrate, error_hashrate]``.
 
-Aggregate hashrate for the mining pool:
+##### Aggregate hashrate for the mining pool
 
 * ``/cgminer_monitor/api/v1/graph_data/local_hashrate.json``
 
-Hashrate for an individual miner:
+##### Hashrate for an individual miner
 
 * ``/cgminer_monitor/api/v1/graph_data/miner_hashrate.json?miner_id=<miner-id>``
 
