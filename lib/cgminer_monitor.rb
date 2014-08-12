@@ -12,4 +12,4 @@ Mongoid.load!("config/mongoid.yml", ENV['RAILS_ENV'] || :development)
 module CgminerMonitor
 end
 
-I18n.enforce_available_locales = false
+I18n.enforce_available_locales = true
