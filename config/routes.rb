@@ -3,9 +3,11 @@ CgminerMonitor::Engine.routes.draw do
     namespace :api do
       namespace :v1 do
         namespace :graph_data do
+          get 'local_availability'
           get 'local_hashrate'
           get 'local_temperature'
 
+          get 'miner_availability'
           get 'miner_hashrate'
           get 'miner_temperature'
         end

@@ -61,7 +61,7 @@ See [cgminer\_api\_client](https://github.com/jramos/cgminer_api_client#configur
 
 Add the following to your ``Gemfile``:
 
-    gem 'cgminer_monitor', '~> 0.0.9'
+    gem 'cgminer_monitor', '~> 0.0.10'
 
 Update your ``config/routes.rb`` file to mount the engine:
 
@@ -104,6 +104,21 @@ Data point format:
         min_temp,
         avg_temp,
         max_temp
+    ]
+
+##### Availability
+
+Endpoints:
+
+* ``/cgminer_monitor/api/v1/graph_data/local_availability.json``
+* ``/cgminer_monitor/api/v1/graph_data/miner_availability.json?miner_id=<miner-id>``
+
+Data point format:
+
+    [
+        timestamp,
+        num_available,
+        num_configured
     ]
 
 ## Contributing
