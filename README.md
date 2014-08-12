@@ -43,9 +43,7 @@ Copy [``config/miners.yml.example``](https://github.com/jramos/cgminer_monitor/b
     - host: 192.168.1.1
       port: 1234
 
-#### Remote API Access
-
-If connecting to a cgminer instance on any host other than 127.0.0.1, remote API access must be enabled. See [cgminer\_api\_client](https://github.com/jramos/cgminer_api_client#remote-api-access) for more information.
+See [cgminer\_api\_client](https://github.com/jramos/cgminer_api_client#configuration) for more information.
 
 ## Running
 
@@ -56,6 +54,32 @@ If connecting to a cgminer instance on any host other than 127.0.0.1, remote API
 ### Stopping
 
     bin/cgminer_monitor stop
+
+## Rails Engine
+
+### Installation
+
+Add the following to your ``Gemfile``:
+
+    gem 'cgminer_monitor', '~> 0.0.3'
+
+Update your ``config/routes.rb`` file to mount the engine:
+
+    mount CgminerMonitor::Engine => '/'
+
+### API Endpoints
+
+#### Graph Data
+
+These endpoints return the previous hour's worth of hashrate data as a JSON array, with each data point being represented as ``[timestamp, avg_hashrate, error_hashrate]``.
+
+Aggregate hashrate for the mining pool:
+
+* ``/cgminer_monitor/api/v1/graph_data/local_hashrate.json``
+
+Hashrate for an individual miner:
+
+* ``/cgminer_monitor/api/v1/graph_data/miner_hashrate.json?miner_id=<miner-id>``
 
 ## Contributing
 
