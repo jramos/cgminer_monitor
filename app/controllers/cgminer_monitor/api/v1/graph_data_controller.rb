@@ -10,7 +10,7 @@ module CgminerMonitor
                 miner_result.first[:ghs_5s].round(2) rescue 0
               end.sum,
               summary[:results].collect do |miner_result|
-                (miner_result.first[:ghs_5s] * miner_result.first[:'pool_rejected%'] / 100).round(2) rescue 0
+                (miner_result.first[:ghs_5s] * miner_result.first[:'device_hardware%'] / 100).round(2) rescue 0
               end.sum
             ]
           end
@@ -27,7 +27,7 @@ module CgminerMonitor
               [
                 summary[:created_at].to_i,
                 (miner_summary[:ghs_5s].round(2) rescue nil),
-                ((miner_summary[:ghs_5s] * miner_summary[:'pool_rejected%'] / 100).round(2) rescue nil)
+                ((miner_summary[:ghs_5s] * miner_summary[:'device_hardware%'] / 100).round(2) rescue nil)
               ] if summary[:results][miner_id]
             end
           end

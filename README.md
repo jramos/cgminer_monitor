@@ -71,7 +71,7 @@ Update your ``config/routes.rb`` file to mount the engine:
 
 #### Graph Data
 
-These endpoints return the previous hour's worth of hashrate data as a JSON array, with each data point being represented as ``[timestamp, avg_hashrate, error_hashrate]``.
+These endpoints return the previous hour's worth of hashrate data as a JSON array, with each data point being represented as ``[timestamp, avg_hashrate, hardware_error_hashrate]``.
 
 ##### Aggregate hashrate for the mining pool
 
