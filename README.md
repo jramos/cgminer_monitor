@@ -61,7 +61,7 @@ See [cgminer\_api\_client](https://github.com/jramos/cgminer_api_client#configur
 
 Add the following to your ``Gemfile``:
 
-    gem 'cgminer_monitor', '~> 0.0.8'
+    gem 'cgminer_monitor', '~> 0.0.9'
 
 Update your ``config/routes.rb`` file to mount the engine:
 
@@ -82,7 +82,7 @@ Endpoints:
 
 Data point format:
 
-    [timestamp, avg_hashrate, pool_rejected_hashrate, hardware_error_hashrate]
+    [timestamp, avg_hashrate, pool_rejected_hashrate, pool_stale_hashrate, hardware_error_hashrate]
 
 ##### Temperatures
 
