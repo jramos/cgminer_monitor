@@ -43,8 +43,6 @@ module CgminerMonitor
       end
     end
 
-    private
-
     # Attempts to write the pid of the forked process to the pid file.
     def self.write(pid, pidfile = 'tmp/pids/cgminer_monitor.pid')
       File.open pidfile, "w" do |f|

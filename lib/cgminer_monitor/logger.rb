@@ -2,8 +2,14 @@ module CgminerMonitor
   class Logger
     attr_accessor :miner_pool
 
+    LOG_INTERVAL = 60
+
     def initialize
       @miner_pool = CgminerApiClient::MinerPool.new
+    end
+
+    def self.log_interval
+      LOG_INTERVAL
     end
 
     def log!

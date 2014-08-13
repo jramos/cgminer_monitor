@@ -2,6 +2,8 @@ module CgminerMonitor
   module Api
     module V1
       class GraphDataController < ActionController::Base
+        before_filter :set_cache_headers
+
         def local_hashrate
           response = summaries.collect do |summary|
             [
@@ -138,6 +140,10 @@ module CgminerMonitor
         end
 
         private
+
+        def set_cache_headers
+          expires_in CgminerMonitor::Logger.log_interval.seconds, :public => true
+        end
 
         def summaries
           CgminerMonitor::Document::Summary.where(:created_at.gt => created_at_from_range)

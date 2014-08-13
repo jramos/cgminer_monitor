@@ -21,7 +21,7 @@ case ARGV.last
 
     loop do
       @logger.log!
-      sleep(60)
+      sleep(CgminerMonitor::Logger.log_interval)
     end
   when 'stop'
     CgminerMonitor::Daemon.stop
