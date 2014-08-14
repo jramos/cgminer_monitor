@@ -16,7 +16,12 @@ module CgminerMonitor
         @logger = CgminerMonitor::Logger.new
 
         loop do
-          @logger.log!
+          begin
+            @logger.log!
+          rescue => e
+            $stderr.puts "#{e.class}: #{e}"
+          end
+
           sleep(CgminerMonitor::Logger.log_interval)
         end
 

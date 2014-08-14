@@ -4,10 +4,11 @@ $LOAD_PATH.unshift("#{File.dirname(__FILE__)}/../lib/")
 
 require 'cgminer_monitor'
 
-command = ARGV.last.try(:to_sym)
+command            = ARGV.last.try(:to_sym)
+available_commands = CgminerMonitor::Daemon.available_commands
 
-unless CgminerMonitor::Daemon.available_commands.include?(command)
-  puts "USAGE: cgminer_monitor [options] #{CgminerMonitor::Daemon.available_commands.collect(&:to_s).join('|')}"
+unless available_commands.include?(command)
+  puts "USAGE: cgminer_monitor [options] #{available_commands.collect(&:to_s).join('|')}"
   exit(0)
 end
 
