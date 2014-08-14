@@ -1,6 +1,6 @@
 # CgminerMonitor
 
-A monitor for cgminer instances. It periodically captures device, status and summary information to MongoDB. It also provides a Rails engine to allow querying cgminer log information from within a Rails application. See [cgminer_manager](https://github.com/jramos/cgminer_manager) for an example of this.
+A monitor for cgminer instances. It periodically captures device, status and summary information to MongoDB. It also provides a Rails engine to allow querying cgminer log information from within a Rails application. See [cgminer_manager](https://github.com/jramos/cgminer_manager) for an example of this type of integration.
 
 ## Requirements
 
@@ -16,13 +16,23 @@ A monitor for cgminer instances. It periodically captures device, status and sum
 
 ## Installation
 
-    git clone git@github.com:jramos/cgminer_monitor.git
-    cd cgminer_monitor
-    bundle install
+### Bundler
+
+Add the following to your ``Gemfile``:
+
+    gem 'cgminer_monitor', '~> 0.1.1'
+
+### RubyGems
+
+    $ gem install cgminer_monitor
+
+### Manually
+
+    $ git clone git@github.com:jramos/cgminer_monitor.git
 
 ## Configuration
 
-### mongodb
+### mongoid
 
 Copy [``config/mongoid.yml.example``](https://github.com/jramos/cgminer_monitor/blob/master/config/mongoid.yml.example) to ``config/mongoid.yml`` and update as necessary.
 
@@ -47,29 +57,37 @@ See [cgminer\_api\_client](https://github.com/jramos/cgminer_api_client#configur
 
 ## Indexing
 
-After configuring mongodb, be sure to create the indexes for the log documents.
+After configuring mongoid, be sure to create the indexes for the log documents.
 
-    rake cgminer_monitor:create_indexes
+    $ rake cgminer_monitor:create_indexes
 
-## Running
+## Monitoring Daemon
 
 ### Starting
 
-    bin/cgminer_monitor start
+    $ cgminer_monitor start
 
 ### Stopping
 
-    bin/cgminer_monitor stop
+    $ cgminer_monitor stop
+
+### Restarting
+
+    $ cgminer_monitor restart
+
+### Checking Status
+
+    $ cgminer_monitor status
+
+### Reporting version
+
+    $ cgminer_monitor version
 
 ## Rails Engine
 
 ### Installation
 
-Add the following to your ``Gemfile``:
-
-    gem 'cgminer_monitor', '~> 0.1.1'
-
-Update your ``config/routes.rb`` file to mount the engine:
+Update your ``config/routes.rb`` file to mount the engine API endpoints:
 
     mount CgminerMonitor::Engine => '/'
 
