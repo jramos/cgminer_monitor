@@ -13,6 +13,7 @@ A monitor for cgminer instances. It periodically captures device, status and sum
 * [cgminer\_api\_client](https://github.com/jramos/cgminer_api_client) (~> 0.1.10)
 * mongoid (= 4.0.0)
 * rails (= 4.1.4)
+* rake (~> 10.0)
 
 ## Installation
 
