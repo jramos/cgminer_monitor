@@ -45,6 +45,12 @@ Copy [``config/miners.yml.example``](https://github.com/jramos/cgminer_monitor/b
 
 See [cgminer\_api\_client](https://github.com/jramos/cgminer_api_client#configuration) for more information.
 
+## Indexing
+
+After configuring mongodb, be sure to create the indexes for the log documents.
+
+    rake cgminer_monitor:create_indexes
+
 ## Running
 
 ### Starting
