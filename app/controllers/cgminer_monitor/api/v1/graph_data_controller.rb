@@ -92,26 +92,26 @@ module CgminerMonitor
           miner_id = params[:miner_id] ? params[:miner_id].to_i : nil
 
           response = if miner_id
-            devs.collect do |device|
-              miner_devs = device[:results][miner_id] || []
-              temperatures = miner_devs.collect do |dev_result|
-                dev_result[:temperature] rescue nil
-              end.compact
+            stats.collect do |stat|
+              miner_stats = stat[:results][miner_id] || []
+              temperatures = miner_stats.collect do |stat_result|
+                stat_result.select{|key, value| key.match('^temp\d') && value > 0 }.values
+              end.flatten
 
               min_temp = temperatures.min.round(2) rescue nil
               avg_temp = (temperatures.sum / temperatures.count).round(2) rescue nil
               max_temp = temperatures.max.round(2) rescue nil
 
-              unless miner_devs.empty?
+              unless miner_stats.empty?
                 [
-                  device[:created_at].to_i,
+                  stat[:created_at].to_i,
                   min_temp,
                   avg_temp,
                   max_temp
                 ]
               else
                 [
-                  device[:created_at].to_i,
+                  stat[:created_at].to_i,
                   0,
                   0,
                   0
@@ -145,12 +145,16 @@ module CgminerMonitor
           expires_in CgminerMonitor::Logger.log_interval.seconds, :public => true
         end
 
-        def summaries
-          CgminerMonitor::Document::Summary.where(:created_at.gt => created_at_from_range)
-        end
-
         def devs
           CgminerMonitor::Document::Devs.where(:created_at.gt => created_at_from_range)
+        end
+
+        def stats
+          CgminerMonitor::Document::Stats.where(:created_at.gt => created_at_from_range)
+        end
+
+        def summaries
+          CgminerMonitor::Document::Summary.where(:created_at.gt => created_at_from_range)
         end
 
         def created_at_from_range
