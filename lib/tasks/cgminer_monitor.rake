@@ -3,11 +3,8 @@ namespace :cgminer_monitor do
 
   desc 'Create indexes'
   task :create_indexes do
-    CgminerMonitor::Document.document_types.each do |klass|
-      print "creating indexes for #{klass.to_s}..."
-        klass.create_indexes
-      puts " done."
-    end
+    print "creating indexes..."
+    CgminerMonitor::Document.create_indexes
+    puts " done."
   end
 end
-

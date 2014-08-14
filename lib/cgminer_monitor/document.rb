@@ -11,5 +11,11 @@ module CgminerMonitor
     def self.document_types
       DOCUMENT_TYPES
     end
+
+    def self.create_indexes
+      self.document_types.each do |klass|
+        klass.create_indexes
+      end
+    end
   end
 end
