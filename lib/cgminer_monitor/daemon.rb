@@ -1,12 +1,32 @@
 module CgminerMonitor
   class Daemon
+    def self.available_commands
+      [:start, :stop, :restart, :status, :version]
+    end
+
     # Checks to see if the current process is the child process and if not
     # will update the pid file with the child pid.
-    def self.start(pid, pidfile = 'tmp/pids/cgminer_monitor.pid', outfile = 'log/cgminer_monitor.log', errfile = 'log/cgminer_monitor.error.log')
+    def self.start(pidfile = 'tmp/pids/cgminer_monitor.pid', outfile = 'log/cgminer_monitor.log', errfile = 'log/cgminer_monitor.error.log')
+      pid = fork do
+        $0 = "cgminer_monitor"
+        Signal.trap("HUP")  { exit }
+        Signal.trap("INT")  { exit }
+        Signal.trap("QUIT") { exit }
+
+        @logger = CgminerMonitor::Logger.new
+
+        loop do
+          @logger.log!
+          sleep(CgminerMonitor::Logger.log_interval)
+        end
+
+        exit(0)
+      end
+
       unless pid.nil?
         raise "Fork failed" if pid == -1
         write(pid, pidfile)
-        exit
+        exit(0)
       else
         redirect(outfile, errfile)
       end
@@ -32,7 +52,12 @@ module CgminerMonitor
       $stderr.puts "While signaling the PID, unexpected #{e.class}: #{e}"
       false
     end
- 
+
+    def self.restart(pidfile = 'tmp/pids/cgminer_monitor.pid', outfile = 'log/cgminer_monitor.log', errfile = 'log/cgminer_monitor.error.log')
+      self.stop(pidfile) unless self.status == :stopped
+      self.start(pidfile, outfile, errfile)
+    end
+
     def self.status(pidfile = 'tmp/pids/cgminer_monitor.pid')
       begin
         opid = open(pidfile).read.strip.to_i
@@ -42,6 +67,12 @@ module CgminerMonitor
         :stopped
       end
     end
+
+    def self.version
+      CgminerMonitor.version
+    end
+
+    private
 
     # Attempts to write the pid of the forked process to the pid file.
     def self.write(pid, pidfile = 'tmp/pids/cgminer_monitor.pid')

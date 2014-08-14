@@ -4,27 +4,9 @@ $LOAD_PATH.unshift("#{File.dirname(__FILE__)}/../lib/")
 
 require 'cgminer_monitor'
 
-unless ['start','stop','status'].include?(ARGV.last)
-  puts "USAGE: cgminer_monitor [options] start|stop|status"
+unless CgminerMonitor::Daemon.available_commands.include?(ARGV.last.try(:to_sym))
+  puts "USAGE: cgminer_monitor [options] #{CgminerMonitor::Daemon.available_commands.collect(&:to_s).join('|')}"
   exit(0);
 end
 
-case ARGV.last
-  when 'start'
-    $0 = "cgminer_monitor"
-    CgminerMonitor::Daemon.start(fork)
-    Signal.trap("HUP")  { exit }
-    Signal.trap("INT")  { exit }
-    Signal.trap("QUIT") { exit }
-
-    @logger = CgminerMonitor::Logger.new
-
-    loop do
-      @logger.log!
-      sleep(CgminerMonitor::Logger.log_interval)
-    end
-  when 'stop'
-    CgminerMonitor::Daemon.stop
-  when 'status'
-    puts CgminerMonitor::Daemon.status
-end
+puts CgminerMonitor::Daemon.send(ARGV.last.to_sym)
