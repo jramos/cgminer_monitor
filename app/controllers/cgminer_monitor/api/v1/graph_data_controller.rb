@@ -29,7 +29,7 @@ module CgminerMonitor
         def local_temperature
           response = devs.collect do |device|
             temperatures = device[:results].collect do |miner_result|
-              miner_result.first[:temperature] rescue nil
+              miner_result.first[:temperature].to_f rescue nil
             end.compact
 
             min_temp = temperatures.min.round(2) rescue nil
@@ -95,7 +95,7 @@ module CgminerMonitor
             stats.collect do |stat|
               miner_stats = stat[:results][miner_id] || []
               temperatures = miner_stats.collect do |stat_result|
-                stat_result.select{|key, value| key.match('^temp\d') && value > 0 }.values
+                stat_result.select{|key, value| key.match('^temp\d') && value > 0 }.values.collect(&:to_f)
               end.flatten
 
               min_temp = temperatures.min.round(2) rescue nil
