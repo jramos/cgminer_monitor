@@ -9,17 +9,23 @@ module CgminerMonitor
             [
               summary[:created_at].to_i,
               summary[:results].collect do |miner_result|
-                miner_result.first[:ghs_5s].round(2) rescue 0
-              end.sum,
+                miner_result.first[:ghs_5s] rescue 0
+              end.sum.round(2),
               summary[:results].collect do |miner_result|
-                (miner_result.first[:ghs_5s] * miner_result.first[:'pool_rejected%'] / 100).round(2) rescue 0
-              end.sum,
+                miner_result.first[:ghs_av] rescue 0
+              end.sum.round(2),
               summary[:results].collect do |miner_result|
-                (miner_result.first[:ghs_5s] * miner_result.first[:'pool_stale%'] / 100).round(2) rescue 0
-              end.sum,
+                miner_result.first[:'device_hardware%'] / 100 rescue 0
+              end.sum.round(6),
               summary[:results].collect do |miner_result|
-                (miner_result.first[:ghs_5s] * miner_result.first[:'device_hardware%'] / 100).round(2) rescue 0
-              end.sum
+                miner_result.first[:'device_rejected%'] / 100 rescue 0
+              end.sum.round(6),
+              summary[:results].collect do |miner_result|
+                miner_result.first[:'pool_rejected%']   / 100 rescue 0
+              end.sum.round(6),
+              summary[:results].collect do |miner_result|
+                miner_result.first[:'pool_stale%']      / 100 rescue 0
+              end.sum.round(6)
             ]
           end
 
@@ -65,23 +71,16 @@ module CgminerMonitor
           response = if miner_id
             summaries.collect do |summary|
               miner_summary = summary[:results][miner_id].try(:first)
-              if miner_summary
-                [
-                  summary[:created_at].to_i,
-                  (miner_summary[:ghs_5s].round(2) rescue 0),
-                  ((miner_summary[:ghs_5s] * miner_summary[:'pool_rejected%'] / 100).round(2) rescue 0),
-                  ((miner_summary[:ghs_5s] * miner_summary[:'pool_stale%'] / 100).round(2) rescue 0),
-                  ((miner_summary[:ghs_5s] * miner_summary[:'device_hardware%'] / 100).round(2) rescue 0)
-                ]
-              else
-                [
-                  summary[:created_at].to_i, 
-                  0,
-                  0,
-                  0,
-                  0
-                ]
-              end
+
+              [
+                summary[:created_at].to_i,
+                (miner_summary[:ghs_5s] rescue 0).round(2),
+                (miner_summary[:ghs_av] rescue 0).round(2),
+                (miner_summary[:'device_hardware%'] / 100 rescue 0).round(6),
+                (miner_summary[:'device_rejected%'] / 100 rescue 0).round(6),
+                (miner_summary[:'pool_rejected%']   / 100 rescue 0).round(6),
+                (miner_summary[:'pool_stale%']      / 100 rescue 0).round(6)
+              ]
             end
           end
 

@@ -21,7 +21,7 @@ A monitor for cgminer instances. It periodically captures device, status and sum
 
 Add the following to your ``Gemfile``:
 
-    gem 'cgminer_monitor', '~> 0.1.9'
+    gem 'cgminer_monitor', '~> 0.2.0'
 
 ### RubyGems
 
@@ -122,10 +122,12 @@ Data point response format:
 
     [
         timestamp,
-        avg_hashrate,
-        pool_rejected_hashrate,
-        pool_stale_hashrate,
-        hardware_error_hashrate
+        hashrate_5s,
+        hashrate_avg,
+        device_error_rate,
+        device_rejected_rate,
+        pool_rejected_rate,
+        pool_stale_rate
     ]
 
 ##### Temperatures
