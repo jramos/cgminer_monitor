@@ -6,26 +6,37 @@ module CgminerMonitor
 
         def local_hashrate
           response = summaries.collect do |summary|
+            device_hardware = summary[:results].collect do |miner_result|
+              miner_result.first[:'device_hardware%'] / 100 rescue 0
+            end
+
+            device_rejected = summary[:results].collect do |miner_result|
+              miner_result.first[:'device_rejected%'] / 100 rescue 0
+            end
+
+            pool_rejected = summary[:results].collect do |miner_result|
+              miner_result.first[:'pool_rejected%']   / 100 rescue 0
+            end
+
+            pool_stale = summary[:results].collect do |miner_result|
+              miner_result.first[:'pool_stale%']      / 100 rescue 0
+            end
+
             [
               summary[:created_at].to_i,
+
               summary[:results].collect do |miner_result|
                 miner_result.first[:ghs_5s] rescue 0
               end.sum.round(2),
+
               summary[:results].collect do |miner_result|
                 miner_result.first[:ghs_av] rescue 0
               end.sum.round(2),
-              summary[:results].collect do |miner_result|
-                miner_result.first[:'device_hardware%'] / 100 rescue 0
-              end.sum.round(6),
-              summary[:results].collect do |miner_result|
-                miner_result.first[:'device_rejected%'] / 100 rescue 0
-              end.sum.round(6),
-              summary[:results].collect do |miner_result|
-                miner_result.first[:'pool_rejected%']   / 100 rescue 0
-              end.sum.round(6),
-              summary[:results].collect do |miner_result|
-                miner_result.first[:'pool_stale%']      / 100 rescue 0
-              end.sum.round(6)
+
+              (device_hardware.sum / device_hardware.size.to_f).round(6),
+              (device_rejected.sum / device_rejected.size.to_f).round(6),
+              (pool_rejected.sum   /   pool_rejected.size.to_f).round(6),
+              (pool_stale.sum      /      pool_stale.size.to_f).round(6)
             ]
           end
 
