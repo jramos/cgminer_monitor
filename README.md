@@ -46,13 +46,14 @@ Copy [``config/mongoid.yml.example``](https://github.com/jramos/cgminer_monitor/
 
 ### cgminer\_api\_client
 
-Copy [``config/miners.yml.example``](https://github.com/jramos/cgminer_monitor/blob/master/config/miners.yml.example) to ``config/miners.yml`` and update with the IP addresses (and optional ports) of your cgminer instances. E.g.
+Copy [``config/miners.yml.example``](https://github.com/jramos/cgminer_monitor/blob/master/config/miners.yml.example) to ``config/miners.yml`` and update with the IP addresses (and optional ports and timeouts) of your cgminer instances. E.g.
 
-    # connect to localhost on the default port (4028)
+    # connect to localhost on the default port (4028) with the default timeout (5 seconds)
     - host: 127.0.0.1
-    # connect to 192.168.1.1 on a non-standard port (1234)
+    # connect to 192.168.1.1 on a non-standard port (1234) with a custom timeout (1 second)
     - host: 192.168.1.1
       port: 1234
+      timeout: 1
 
 See [cgminer\_api\_client](https://github.com/jramos/cgminer_api_client#configuration) for more information.
 
