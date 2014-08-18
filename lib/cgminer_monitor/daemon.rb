@@ -17,13 +17,17 @@ module CgminerMonitor
         @logger = CgminerMonitor::Logger.new
 
         loop do
+          start = Time.now
+
           begin
             @logger.log!
           rescue => e
             $stderr.puts "#{e.class}: #{e}"
           end
 
-          sleep(CgminerMonitor::Logger.log_interval)
+          duration = Time.now - start
+
+          sleep(CgminerMonitor::Logger.log_interval - duration)
         end
 
         exit(0)
