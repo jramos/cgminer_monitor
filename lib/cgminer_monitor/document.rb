@@ -17,5 +17,11 @@ module CgminerMonitor
         klass.create_indexes
       end
     end
+
+    def self.delete_all
+      self.document_types.each do |klass|
+        klass.delete_all
+      end
+    end
   end
 end
