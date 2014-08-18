@@ -12,6 +12,7 @@ module CgminerMonitor
         Signal.trap("HUP")  { exit }
         Signal.trap("INT")  { exit }
         Signal.trap("QUIT") { exit }
+        redirect(outfile, errfile)
 
         @logger = CgminerMonitor::Logger.new
 
@@ -32,8 +33,6 @@ module CgminerMonitor
         raise "Fork failed" if pid == -1
         write(pid, pidfile)
         exit(0)
-      else
-        redirect(outfile, errfile)
       end
     end
 
