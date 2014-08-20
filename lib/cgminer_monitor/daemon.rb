@@ -27,7 +27,11 @@ module CgminerMonitor
 
           duration = Time.now - start
 
-          sleep(CgminerMonitor::Logger.log_interval - duration)
+          if duration < CgminerMonitor::Logger.log_interval
+            sleep(CgminerMonitor::Logger.log_interval - duration)
+          else
+            sleep(CgminerMonitor::Logger.log_interval)
+          end
         end
 
         exit(0)
