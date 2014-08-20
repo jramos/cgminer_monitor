@@ -14,13 +14,11 @@ module CgminerMonitor
         Signal.trap("QUIT") { exit }
         redirect(outfile, errfile)
 
-        @logger = CgminerMonitor::Logger.new
-
         loop do
           start = Time.now
 
           begin
-            @logger.log!
+            CgminerMonitor::Logger.new.log!
           rescue => e
             $stderr.puts "#{e.class}: #{e}"
           end
