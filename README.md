@@ -21,7 +21,7 @@ A monitor for cgminer instances. It periodically captures device, status and sum
 
 Add the following to your ``Gemfile``:
 
-    gem 'cgminer_monitor', '~> 0.2.11'
+    gem 'cgminer_monitor', '~> 0.2.12'
 
 ### RubyGems
 
