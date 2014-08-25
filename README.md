@@ -162,6 +162,16 @@ Data point response format:
         num_configured
     ]
 
+### Cron
+
+There's a cron script that monitors the status of cgminer_monitor and restarts it when it discovers it is not running.
+
+#### Installation
+
+Add the following to ``/etc/crontab``:
+
+    */3 * * * *     <user>  cd <application root>; bundle exec cgminer_monitor-monitor
+
 ## Contributing
 
 1. Fork it ( https://github.com/jramos/cgminer_monitor/fork )
