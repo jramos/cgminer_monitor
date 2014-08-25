@@ -4,7 +4,6 @@
 
 set -x
 C=`pidof cgminer_monitor`
-if [ "$C" = "" ]; then
-    cgminer_monitor restart
-    exit 0;
+if [ -n "$C" ]; then
+  cgminer_monitor restart
 fi
