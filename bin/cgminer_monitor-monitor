@@ -1,0 +1,10 @@
+#!/bin/sh
+
+# This is a cron job that ensures cgminer_monitor is running
+
+set -x
+C=`pidof cgminer_monitor`
+if [ "$C" = "" ]; then
+    cgminer_monitor restart
+    exit 0;
+fi
