@@ -1,5 +1,5 @@
 module CgminerMonitor
-  VERSION = "0.2.9"
+  VERSION = "0.2.10"
 
   def self.version
     VERSION
