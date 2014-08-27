@@ -3,8 +3,7 @@ CgminerMonitor::Engine.routes.draw do
     namespace :api do
       namespace :v1 do
         namespace :log do
-          get 'application'
-          get 'error'
+          get 'last_entries'
         end
 
         get 'ping' => 'ping#index'
