@@ -6,7 +6,11 @@ module CgminerMonitor
       index({ created_at: 1 })
 
       def self.last_entry
-        order_by(:created_at.desc).first
+        self.last_entries(1)
+      end
+
+      def self.last_entries(n)
+        order_by(:created_at.desc).limit(n)
       end
     end
   end
