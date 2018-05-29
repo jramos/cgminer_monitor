@@ -10,7 +10,7 @@ Gem::Specification.new do |spec|
   spec.email         = ["justin.ramos@gmail.com"]
   spec.summary       = %q{A monitor for cgminer instances.}
   spec.description   = %q{}
-  spec.homepage      = "http://www.ramosresearch.com"
+  spec.homepage      = "https://github.com/jramos/cgminer_monitor"
   spec.license       = "MIT"
 
   spec.files         = `git ls-files -z`.split("\x0")
