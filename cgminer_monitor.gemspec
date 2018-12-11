@@ -20,7 +20,7 @@ Gem::Specification.new do |spec|
 
   spec.add_dependency "cgminer_api_client",    "~> 0.2.5",    ">= 0.2.5"
   spec.add_dependency "mongoid",               "~> 4.0.0",    ">= 4.0.0"
-  spec.add_dependency "rails",                 "~> 4.2.7.1",  ">= 4.2.7.1"
+  spec.add_dependency "rails",                 "~> 4.2.11",   ">= 4.2.11"
   spec.add_dependency "rake",                  "~> 10.0",     ">= 10.0"
 
   spec.add_development_dependency "bundler",   "~> 1.6",      ">= 1.6"

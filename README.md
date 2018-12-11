@@ -12,7 +12,7 @@ A monitor for cgminer instances. It periodically captures device, status and sum
 
 * [cgminer\_api\_client](https://github.com/jramos/cgminer_api_client) (~> 0.2.5)
 * mongoid (= 4.0.0)
-* rails (= 4.2.7.1)
+* rails (= 4.2.11)
 * rake (~> 10.0)
 
 ## Installation
@@ -21,7 +21,7 @@ A monitor for cgminer instances. It periodically captures device, status and sum
 
 Add the following to your ``Gemfile``:
 
-    gem 'cgminer_monitor', '~> 0.2.22'
+    gem 'cgminer_monitor', '~> 0.2.23'
 
 ### RubyGems
 
