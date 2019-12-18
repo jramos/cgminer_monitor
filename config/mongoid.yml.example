@@ -1,5 +1,5 @@
 production:
-  sessions:
+  clients:
     default:
       database: cgminer_monitor
       hosts:

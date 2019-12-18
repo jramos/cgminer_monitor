@@ -28,7 +28,7 @@ describe CgminerMonitor::Logger do
 
     it 'should query the mining pool for all document_types' do
       CgminerMonitor::Document.document_types.each do |klass|
-        expect(miner_pool).to receive(:query).with(klass.to_s.demodulize.downcase).and_return(:results)
+        expect(miner_pool).to receive(:query).with(klass.to_s.demodulize.downcase)
       end
 
       instance.log!
