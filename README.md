@@ -184,7 +184,7 @@ Add the following to ``/etc/crontab``:
 
 If you find this application useful, please consider donating.
 
-BTC: ``18HFFqZv2KJMHPNwPes839PJd5GZc4cT3U``
+BTC: ``bc1q00genlpcpcglgd4rezqcurf4t4taz0acmm9vea``
 
 ## License
 
