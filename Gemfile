@@ -4,6 +4,9 @@ source 'https://rubygems.org'
 
 gemspec
 
+# Ruby 4.0 removed ostruct from default gems; Mongoid 9 hasn't updated.
+gem 'ostruct' if RUBY_VERSION >= '3.5'
+
 group :development do
   gem 'rake',          '>= 13.2'
   gem 'rspec',         '>= 3.13'

@@ -5,6 +5,9 @@ module CgminerMonitor
     class Log
       include Mongoid::Document
 
+      field :results,    type: Array
+      field :created_at, type: Time
+
       index({ created_at: 1 })
 
       def self.last_entry
@@ -12,7 +15,7 @@ module CgminerMonitor
       end
 
       def self.last_entries(num)
-        order_by(:created_at.desc).limit(num)
+        order_by(created_at: :desc).limit(num)
       end
     end
   end
