@@ -8,6 +8,10 @@ module CgminerMonitor
       field :results,    type: Array
       field :created_at, type: Time
 
+      def results=(value)
+        attributes['results'] = value
+      end
+
       index({ created_at: 1 })
 
       def self.last_entry

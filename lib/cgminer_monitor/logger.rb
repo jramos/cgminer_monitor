@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'active_support/core_ext/string/inflections'
+
 module CgminerMonitor
   class Logger
     attr_accessor :miner_pool
@@ -18,11 +20,12 @@ module CgminerMonitor
       created_at = Time.now
 
       CgminerMonitor::Document.document_types.each do |klass|
-        next unless (query_results = @miner_pool.query(klass.to_s.demodulize.downcase))
+        pool_result = @miner_pool.query(klass.to_s.demodulize.downcase)
+        results = pool_result.map { |mr| mr.ok? ? mr.value : nil }
 
         doc = klass.new
-        doc.update_attribute(:results, query_results)
-        doc.update_attribute(:created_at, created_at)
+        doc.results = results
+        doc.created_at = created_at
         doc.save!
       end
     end
