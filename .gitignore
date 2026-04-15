@@ -1,20 +1,24 @@
 /.bundle/
 /.yardoc
-/Gemfile.lock
 /_yardoc/
 /coverage/
 /doc/
 /pkg/
 /spec/reports/
 /tmp/
+/log/
 *.bundle
 *.so
 *.o
 *.a
 mkmf.log
 
-/log/*.log
+# Config files with real credentials
 config/miners.yml
 config/mongoid.yml
 
+# macOS resource forks
 ._*
+
+# Gem lockfile (library gem — consumers generate their own)
+/Gemfile.lock
