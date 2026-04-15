@@ -2,10 +2,12 @@
 
 require 'spec_helper'
 
-describe CgminerMonitor do
-  subject { CgminerMonitor }
-
+RSpec.describe CgminerMonitor do
   it 'has a version constant' do
-    expect(subject::VERSION).to be_a(String)
+    expect(described_class::VERSION).not_to be_nil
+  end
+
+  it 'has a .version method' do
+    expect(described_class.version).to eq described_class::VERSION
   end
 end
