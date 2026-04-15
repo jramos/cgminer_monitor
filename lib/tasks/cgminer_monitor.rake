@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 namespace :cgminer_monitor do
   require 'cgminer_monitor'
 

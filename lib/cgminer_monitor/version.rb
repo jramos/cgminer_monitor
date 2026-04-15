@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module CgminerMonitor
   VERSION = "0.2.23"
 

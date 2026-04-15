@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'cgminer_api_client'
 require 'mongoid'
 require 'rails'

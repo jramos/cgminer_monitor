@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'cgminer_monitor/document/log'
 require 'cgminer_monitor/document/devs'
 require 'cgminer_monitor/document/pools'

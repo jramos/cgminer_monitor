@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module CgminerMonitor
   class Logger
     attr_accessor :miner_pool

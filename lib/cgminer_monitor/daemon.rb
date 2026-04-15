@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module CgminerMonitor
   class Daemon
     def self.available_commands

@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 CgminerMonitor::Engine.routes.draw do
   namespace :cgminer_monitor do
     namespace :api do
