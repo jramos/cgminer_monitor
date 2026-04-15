@@ -1,0 +1,81 @@
+plugins:
+  - rubocop-rake
+  - rubocop-rspec
+
+AllCops:
+  TargetRubyVersion: 3.2
+  NewCops: enable
+  SuggestExtensions: false
+  Exclude:
+    - 'vendor/**/*'
+    - 'coverage/**/*'
+    - 'tmp/**/*'
+    - 'app/**/*'
+    - 'config/routes.rb'
+    - 'lib/cgminer_monitor/engine.rb'
+    - 'lib/tasks/**/*'
+
+Metrics/AbcSize:
+  Enabled: false
+Metrics/BlockLength:
+  Exclude:
+    - 'spec/**/*'
+    - '*.gemspec'
+Metrics/ClassLength:
+  Enabled: false
+Metrics/CyclomaticComplexity:
+  Enabled: false
+Metrics/MethodLength:
+  Enabled: false
+Metrics/ModuleLength:
+  Enabled: false
+Metrics/PerceivedComplexity:
+  Enabled: false
+
+Style/StringLiterals:
+  Enabled: false
+Style/StringLiteralsInInterpolation:
+  Enabled: false
+Style/Documentation:
+  Enabled: false
+
+# Daemon uses rescue ::Exception, bare rescues, and Kernel#open.
+# The class is deleted in Phase 3; don't bother refactoring.
+Lint/RescueException:
+  Exclude:
+    - 'lib/cgminer_monitor/daemon.rb'
+Lint/SuppressedException:
+  Exclude:
+    - 'lib/cgminer_monitor/daemon.rb'
+Security/Open:
+  Exclude:
+    - 'lib/cgminer_monitor/daemon.rb'
+
+RSpec/AnyInstance:
+  Enabled: false
+RSpec/ContextWording:
+  Enabled: false
+RSpec/DescribedClass:
+  Enabled: false
+RSpec/ExampleLength:
+  Enabled: false
+RSpec/MessageChain:
+  Enabled: false
+RSpec/MessageSpies:
+  Enabled: false
+RSpec/MultipleExpectations:
+  Enabled: false
+RSpec/MultipleMemoizedHelpers:
+  Enabled: false
+RSpec/NamedSubject:
+  Enabled: false
+RSpec/PendingWithoutReason:
+  Enabled: false
+RSpec/StubbedMock:
+  Enabled: false
+RSpec/SubjectStub:
+  Enabled: false
+RSpec/VerifiedDoubleReference:
+  Enabled: false
+RSpec/VerifiedDoubles:
+  Enabled: false

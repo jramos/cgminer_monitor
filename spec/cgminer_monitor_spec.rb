@@ -3,9 +3,9 @@
 require 'spec_helper'
 
 describe CgminerMonitor do
-  subject  { CgminerMonitor }
+  subject { CgminerMonitor }
 
-  it 'should have a version constant' do
-    subject::VERSION
+  it 'has a version constant' do
+    expect(subject::VERSION).to be_a(String)
   end
 end

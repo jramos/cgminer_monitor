@@ -9,7 +9,7 @@ command            = ARGV.last.try(:to_sym)
 available_commands = CgminerMonitor::Daemon.available_commands
 
 unless available_commands.include?(command)
-  puts "USAGE: cgminer_monitor [options] #{available_commands.collect(&:to_s).join('|')}"
+  puts "USAGE: cgminer_monitor [options] #{available_commands.join('|')}"
   exit(0)
 end
 

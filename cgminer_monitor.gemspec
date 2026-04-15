@@ -19,24 +19,24 @@ Gem::Specification.new do |spec|
   spec.required_ruby_version = ">= 3.2"
 
   spec.metadata = {
-    "source_code_uri"       => spec.homepage,
-    "changelog_uri"         => "#{spec.homepage}/blob/master/CHANGELOG.md",
-    "bug_tracker_uri"       => "#{spec.homepage}/issues",
+    "source_code_uri" => spec.homepage,
+    "changelog_uri" => "#{spec.homepage}/blob/master/CHANGELOG.md",
+    "bug_tracker_uri" => "#{spec.homepage}/issues",
     "rubygems_mfa_required" => "true"
   }
 
   spec.files = Dir.glob([
-    "lib/**/*.rb",
-    "lib/**/*.rake",
-    "bin/*",
-    "app/**/*.rb",
-    "config/*.example",
-    "config/routes.rb",
-    "README.md",
-    "LICENSE.txt",
-    "CHANGELOG.md",
-    "cgminer_monitor.gemspec"
-  ])
+                          "lib/**/*.rb",
+                          "lib/**/*.rake",
+                          "bin/*",
+                          "app/**/*.rb",
+                          "config/*.example",
+                          "config/routes.rb",
+                          "README.md",
+                          "LICENSE.txt",
+                          "CHANGELOG.md",
+                          "cgminer_monitor.gemspec"
+                        ])
   spec.executables   = spec.files.grep(%r{^bin/}) { |f| File.basename(f) }
   spec.require_paths = ["lib"]
 

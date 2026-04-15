@@ -8,22 +8,18 @@ require 'cgminer_monitor/document/summary'
 
 module CgminerMonitor
   module Document
-    DOCUMENT_TYPES = [Document::Devs, Document::Pools, Document::Stats, Document::Summary]
+    DOCUMENT_TYPES = [Document::Devs, Document::Pools, Document::Stats, Document::Summary].freeze
 
     def self.document_types
       DOCUMENT_TYPES
     end
 
     def self.create_indexes
-      self.document_types.each do |klass|
-        klass.create_indexes
-      end
+      document_types.each(&:create_indexes)
     end
 
     def self.delete_all
-      self.document_types.each do |klass|
-        klass.delete_all
-      end
+      document_types.each(&:delete_all)
     end
   end
 end
