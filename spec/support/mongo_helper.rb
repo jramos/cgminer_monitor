@@ -8,8 +8,20 @@ Mongoid.configure do |config|
   }
 end
 
-# Sample/Snapshot bootstrap and cleanup hooks are added in Task 3
-# after the models exist.
+# Bootstrap the Sample time-series collection.
+# In production this is done by CgminerMonitor::Server#run with Config values;
+# in tests we use a fixed 1-day retention.
+CgminerMonitor::Sample.store_in(
+  collection: "samples",
+  collection_options: {
+    time_series: {
+      timeField: "ts",
+      metaField: "meta",
+      granularity: "minutes"
+    },
+    expire_after: 86_400
+  }
+)
 
 module MongoTestHelpers
   def assert_time_series_collection!(collection_name)
@@ -19,8 +31,38 @@ module MongoTestHelpers
     expect(info['type']).to eq('timeseries'),
                             "Expected '#{collection_name}' to be timeseries, got '#{info['type']}'"
   end
+
+  def insert_samples(*rows)
+    CgminerMonitor::Sample.collection.insert_many(rows.flatten)
+  end
+
+  def upsert_snapshot(miner:, command:, ok: true, response: {}, error: nil, # rubocop:disable Metrics/ParameterLists
+                      fetched_at: Time.now.utc)
+    CgminerMonitor::Snapshot.collection.update_one(
+      { "miner" => miner, "command" => command },
+      { "$set" => { "fetched_at" => fetched_at, "ok" => ok, "response" => response, "error" => error } },
+      upsert: true
+    )
+  end
+
+  def build_sample(miner:, command:, metric:, value:, sub: 0, ts: Time.now.utc) # rubocop:disable Metrics/ParameterLists
+    { ts: ts, meta: { "miner" => miner, "command" => command, "sub" => sub, "metric" => metric }, v: value.to_f }
+  end
 end
 
 RSpec.configure do |config|
   config.include MongoTestHelpers
+
+  config.before(:suite) do
+    db = Mongoid.default_client.database
+    db[:samples].drop
+    db[:latest_snapshot].drop
+    CgminerMonitor::Sample.create_collection
+    # Snapshot indexes are created after Snapshot model exists (Task 4)
+  end
+
+  config.after do
+    CgminerMonitor::Sample.collection.delete_many({})
+    # Snapshot cleanup added in Task 4
+  end
 end
