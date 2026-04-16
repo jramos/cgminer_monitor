@@ -1,0 +1,217 @@
+openapi: "3.1.0"
+info:
+  title: cgminer_monitor API
+  version: "2.0.0"
+  description: |
+    Periodically polls cgminer instances and exposes their state via HTTP.
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:9292
+    description: Local development
+
+paths:
+  /v2/healthz:
+    get:
+      operationId: getHealthz
+      summary: Liveness/readiness check
+      responses:
+        "200":
+          description: Healthy or starting
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [healthy, starting, degraded] }
+                  mongo: { type: boolean }
+                  last_poll_at: { type: string, format: date-time, nullable: true }
+                  last_poll_age_s: { type: integer, nullable: true }
+                  miners_configured: { type: integer }
+                  miners_available: { type: integer }
+                  uptime_s: { type: integer }
+        "503":
+          description: Degraded
+
+  /v2/metrics:
+    get:
+      operationId: getMetrics
+      summary: Prometheus metrics endpoint
+      responses:
+        "200":
+          description: Prometheus text exposition
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /v2/miners:
+    get:
+      operationId: getMiners
+      summary: List configured miners with current availability
+      responses:
+        "200":
+          description: Miner list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  miners:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        host: { type: string }
+                        port: { type: integer }
+                        available: { type: boolean }
+                        last_poll: { type: string, format: date-time, nullable: true }
+
+  /v2/miners/{miner}/devices:
+    get:
+      operationId: getMinerDevices
+      summary: Latest devs response for miner
+      parameters:
+        - name: miner
+          in: path
+          required: true
+          schema: { type: string }
+          description: "host:port identifier"
+      responses:
+        "200":
+          description: Device snapshot
+        "404":
+          description: Unknown miner
+
+  /v2/miners/{miner}/pools:
+    get:
+      operationId: getMinerPools
+      summary: Latest pools response for miner
+      parameters:
+        - name: miner
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Pool snapshot
+        "404":
+          description: Unknown miner
+
+  /v2/miners/{miner}/summary:
+    get:
+      operationId: getMinerSummary
+      summary: Latest summary response for miner
+      parameters:
+        - name: miner
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Summary snapshot
+        "404":
+          description: Unknown miner
+
+  /v2/miners/{miner}/stats:
+    get:
+      operationId: getMinerStats
+      summary: Latest stats response for miner
+      parameters:
+        - name: miner
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Stats snapshot
+        "404":
+          description: Unknown miner
+
+  /v2/graph_data/hashrate:
+    get:
+      operationId: getGraphDataHashrate
+      summary: Hashrate time series
+      parameters:
+        - name: miner
+          in: query
+          required: false
+          schema: { type: string }
+        - name: since
+          in: query
+          required: false
+          schema: { type: string }
+          description: "ISO-8601 or relative (1h, 30m, 7d, 2w)"
+        - name: until
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: Hashrate data
+        "400":
+          description: Invalid parameters
+
+  /v2/graph_data/temperature:
+    get:
+      operationId: getGraphDataTemperature
+      summary: Temperature time series
+      parameters:
+        - name: miner
+          in: query
+          required: false
+          schema: { type: string }
+        - name: since
+          in: query
+          required: false
+          schema: { type: string }
+        - name: until
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: Temperature data
+        "400":
+          description: Invalid parameters
+
+  /v2/graph_data/availability:
+    get:
+      operationId: getGraphDataAvailability
+      summary: Availability time series
+      parameters:
+        - name: miner
+          in: query
+          required: false
+          schema: { type: string }
+        - name: since
+          in: query
+          required: false
+          schema: { type: string }
+        - name: until
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: Availability data
+        "400":
+          description: Invalid parameters
+
+  /openapi.yml:
+    get:
+      operationId: getOpenApiSpec
+      summary: OpenAPI 3.1 specification
+      responses:
+        "200":
+          description: YAML OpenAPI spec
+
+  /docs:
+    get:
+      operationId: getDocs
+      summary: Swagger UI
+      responses:
+        "200":
+          description: HTML documentation page
