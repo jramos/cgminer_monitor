@@ -1,16 +1,123 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-$LOAD_PATH.unshift("#{File.dirname(__FILE__)}/../lib/")
+$LOAD_PATH.unshift(File.expand_path('../lib', __dir__))
 
 require 'cgminer_monitor'
 
-command            = ARGV.last&.to_sym
-available_commands = CgminerMonitor::Daemon.available_commands
+DEPRECATED_COMMANDS = {
+  'start' => 'run',
+  'stop' => nil,
+  'restart' => 'run',
+  'status' => 'doctor'
+}.freeze
 
-unless available_commands.include?(command)
-  puts "USAGE: cgminer_monitor [options] #{available_commands.join('|')}"
-  exit(0)
+command = ARGV.first
+
+case command
+when 'run'
+  config = CgminerMonitor::Config.from_env
+  CgminerMonitor::Logger.format = config.log_format
+  CgminerMonitor::Logger.level = config.log_level
+
+  server = CgminerMonitor::Server.new(config)
+  exit server.run
+
+when 'migrate'
+  config = CgminerMonitor::Config.from_env
+  CgminerMonitor::Logger.format = config.log_format
+  CgminerMonitor::Logger.level = config.log_level
+
+  Mongoid.configure do |c|
+    c.clients.default = { uri: config.mongo_url }
+  end
+
+  CgminerMonitor::Sample.store_in(
+    collection: 'samples',
+    collection_options: {
+      time_series: {
+        timeField: 'ts',
+        metaField: 'meta',
+        granularity: 'minutes'
+      },
+      expire_after: config.retention_seconds
+    }
+  )
+  CgminerMonitor::Sample.create_collection
+  CgminerMonitor::Snapshot.create_indexes
+
+  CgminerMonitor::Logger.info(event: 'migrate.complete',
+                              message: 'Collections created and indexes ensured')
+  puts 'migrate: done'
+
+when 'doctor'
+  config = CgminerMonitor::Config.from_env
+  puts "cgminer_monitor #{CgminerMonitor::VERSION}"
+  puts ''
+  puts 'Configuration:'
+  config.public_attrs.each do |key, value|
+    puts "  #{key}: #{value}"
+  end
+  puts ''
+
+  # Check Mongo
+  print 'Mongo connection... '
+  begin
+    Mongoid.configure do |c|
+      c.clients.default = { uri: config.mongo_url }
+    end
+    Mongoid.default_client.database_names
+    puts 'OK'
+  rescue StandardError => e
+    puts "FAILED: #{e.class}: #{e.message}"
+  end
+
+  # Check miners
+  puts ''
+  puts 'Miners:'
+  begin
+    miners = YAML.safe_load_file(config.miners_file)
+    miners.each do |m|
+      host = m['host']
+      port = m['port'] || 4028
+      print "  #{host}:#{port} ... "
+      begin
+        miner = CgminerApiClient::Miner.new(host, port)
+        result = miner.query('version')
+        puts "OK (#{result})"
+      rescue StandardError => e
+        puts "FAILED: #{e.class}: #{e.message}"
+      end
+    end
+  rescue StandardError => e
+    puts "  Failed to load miners file: #{e.message}"
+  end
+
+when 'version', '-v', '--version'
+  puts "cgminer_monitor #{CgminerMonitor::VERSION}"
+
+when *DEPRECATED_COMMANDS.keys
+  suggestion = DEPRECATED_COMMANDS[command]
+  if suggestion
+    warn "unknown command '#{command}'. Did you mean '#{suggestion}'?"
+  else
+    warn "unknown command '#{command}'. " \
+         "Process management is now handled by your supervisor (systemd, docker, etc.)."
+  end
+  exit 64
+
+when nil
+  warn "usage: cgminer_monitor <command>"
+  warn ""
+  warn "commands:"
+  warn "  run       Run the monitoring service in the foreground"
+  warn "  migrate   Create MongoDB collections and indexes (idempotent)"
+  warn "  doctor    Validate config, test Mongo + miner connectivity"
+  warn "  version   Print version and exit"
+  exit 64
+
+else
+  warn "unknown command '#{command}'."
+  warn "Run 'cgminer_monitor' with no arguments for usage."
+  exit 64
 end
-
-puts CgminerMonitor::Daemon.send(command)
