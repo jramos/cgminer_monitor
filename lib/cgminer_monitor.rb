@@ -9,9 +9,6 @@ require 'cgminer_monitor/sample'
 require 'cgminer_monitor/snapshot'
 require 'cgminer_monitor/sample_query'
 require 'cgminer_monitor/snapshot_query'
-require 'cgminer_monitor/daemon'
-require 'cgminer_monitor/document'
-require 'cgminer_monitor/logger'
 require 'cgminer_monitor/version'
 
 module CgminerMonitor
