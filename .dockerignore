@@ -1,0 +1,17 @@
+.git
+.github
+.bundle
+coverage
+doc
+log
+pkg
+spec
+tmp
+vendor/bundle
+*.gem
+.rubocop.yml
+.ruby-version
+.gitignore
+Gemfile.lock
+MIGRATION.md
+docs/

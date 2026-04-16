@@ -1,0 +1,52 @@
+# docker-compose.yml — local development and demo
+#
+# Usage:
+#   docker-compose up -d mongo        # just Mongo for test runs
+#   docker-compose up                  # full stack with fake miner
+#
+# Environment variables are documented in README.md.
+
+services:
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  cgminer_monitor:
+    build: .
+    depends_on:
+      - mongo
+    ports:
+      - "9292:9292"
+    environment:
+      CGMINER_MONITOR_MONGO_URL: mongodb://mongo:27017/cgminer_monitor
+      CGMINER_MONITOR_HTTP_HOST: "0.0.0.0"
+      CGMINER_MONITOR_MINERS_FILE: /app/config/miners.yml
+    volumes:
+      - ./config/miners.yml:/app/config/miners.yml:ro
+    # Run migrate first (idempotent), then the server
+    command: >
+      sh -c "bundle exec cgminer_monitor migrate &&
+             bundle exec cgminer_monitor run"
+
+  fake_cgminer:
+    # Optional service for end-to-end testing without real miners.
+    # Uses the base Ruby image with spec files mounted (not the app Dockerfile,
+    # which excludes spec/ via .dockerignore).
+    image: ruby:3.4-slim
+    profiles:
+      - testing
+    ports:
+      - "4028:4028"
+    volumes:
+      - ./spec/support:/app/spec/support:ro
+    working_dir: /app
+    command: >
+      ruby -r /app/spec/support/cgminer_fixtures.rb
+           -r /app/spec/support/fake_cgminer.rb
+           -e "FakeCgminer.with(port: 4028) { |p| puts \"FakeCgminer on #{p}\"; sleep }"
+
+volumes:
+  mongo_data:
