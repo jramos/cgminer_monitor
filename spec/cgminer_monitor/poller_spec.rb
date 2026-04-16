@@ -282,6 +282,48 @@ RSpec.describe CgminerMonitor::Poller do
     end
   end
 
+  describe 'Mongo write failure' do
+    it 'increments polls_failed and does not propagate the exception' do
+      real_collection = CgminerMonitor::Sample.collection
+      allow(real_collection).to receive(:insert_many)
+        .and_raise(Mongo::Error::OperationFailure, 'write failed')
+      allow(CgminerMonitor::Sample).to receive(:collection).and_return(real_collection)
+
+      expect { poller.poll_once }.not_to raise_error
+      expect(poller.polls_failed).to eq 1
+    end
+  end
+
+  describe '#run_until_stopped' do
+    it 'runs at least one poll then exits after stop is called' do
+      thread = Thread.new { poller.run_until_stopped(Queue.new) }
+
+      # Give it a moment to run the first poll, then stop it
+      sleep 0.1
+      poller.stop
+      thread.join(3)
+
+      expect(thread).not_to be_alive
+      expect(poller.polls_ok).to be >= 1
+    end
+  end
+
+  describe '#build_miner_pool with missing file' do
+    it 'raises ConfigError when miners_file does not exist' do
+      bad_config = CgminerMonitor::Config.from_env(
+        'CGMINER_MONITOR_MINERS_FILE' => miners_file_path,
+        'CGMINER_MONITOR_INTERVAL' => '60'
+      )
+
+      # Create a poller with a valid config/file first, then test directly
+      expect do
+        described_class.new(bad_config, miner_pool: nil).send(
+          :build_miner_pool, '/nonexistent/path/miners.yml'
+        )
+      end.to raise_error(CgminerMonitor::ConfigError, /miners_file not found/)
+    end
+  end
+
   describe 'metric extraction edge cases' do
     let(:numeric_string_response) do
       [{ 'SUMMARY' => [{ 'Elapsed' => '12345', 'GHS 5s' => '1234.56' }],

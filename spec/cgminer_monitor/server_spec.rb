@@ -106,4 +106,47 @@ RSpec.describe CgminerMonitor::Server do
       expect(described_class).to respond_to(:started_at=)
     end
   end
+
+  describe '#validate_startup!' do
+    it 'does not raise when miners_file is valid and Mongo is reachable' do
+      expect { server.send(:validate_startup!) }.not_to raise_error
+    end
+
+    it 'raises ConfigError when miners_file is empty array' do
+      empty_array_file = File.expand_path('../../tmp/empty_array_miners.yml', __dir__)
+      FileUtils.mkdir_p(File.dirname(empty_array_file))
+      File.write(empty_array_file, "[]\n")
+
+      empty_config = CgminerMonitor::Config.from_env(
+        'CGMINER_MONITOR_INTERVAL' => '60',
+        'CGMINER_MONITOR_MINERS_FILE' => empty_array_file,
+        'CGMINER_MONITOR_HTTP_PORT' => '0',
+        'CGMINER_MONITOR_SHUTDOWN_TIMEOUT' => '2'
+      )
+
+      # Server.new builds the Poller which calls build_miner_pool — supply
+      # a pre-built miner_pool double so we can test validate_startup! alone
+      miner_pool_double = instance_double(CgminerApiClient::MinerPool, miners: [])
+      allow(CgminerApiClient::MinerPool).to receive(:allocate).and_return(miner_pool_double)
+      allow(miner_pool_double).to receive(:miners=)
+      allow(miner_pool_double).to receive(:miners).and_return([])
+
+      empty_server = described_class.new(empty_config)
+
+      expect { empty_server.send(:validate_startup!) }
+        .to raise_error(CgminerMonitor::ConfigError, /empty/)
+    ensure
+      FileUtils.rm_f(empty_array_file)
+    end
+
+    it 'raises a Mongo::Error when Mongo is unreachable' do
+      client_double = double('mongo_client')
+      allow(client_double).to receive(:database_names)
+        .and_raise(Mongo::Error::OperationFailure, 'server unreachable')
+      allow(Mongoid).to receive(:default_client).and_return(client_double)
+
+      expect { server.send(:validate_startup!) }
+        .to raise_error(Mongo::Error)
+    end
+  end
 end

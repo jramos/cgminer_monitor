@@ -103,6 +103,21 @@ RSpec.describe CgminerMonitor::HttpApp do
     end
   end
 
+  describe 'GET /v2/miners/:miner/summary — not yet polled' do
+    # No before block — miner_a is configured but has no snapshot in DB
+
+    it 'returns 200 with null fields for a configured miner with no snapshot yet' do
+      get "/v2/miners/#{CGI.escape(miner_a)}/summary"
+
+      expect(last_response.status).to eq 200
+      body = JSON.parse(last_response.body)
+      expect(body['miner']).to eq miner_a
+      expect(body['command']).to eq 'summary'
+      expect(body['ok']).to be_nil
+      expect(body['response']).to be_nil
+    end
+  end
+
   describe 'GET /v2/miners/:miner/devices' do
     before do
       upsert_snapshot(miner: miner_a, command: 'devs',
@@ -185,6 +200,21 @@ RSpec.describe CgminerMonitor::HttpApp do
       expect(last_response.status).to eq 200
     end
 
+    it 'parses relative time with minutes' do
+      get '/v2/graph_data/hashrate', miner: miner_a, since: '30m'
+      expect(last_response.status).to eq 200
+    end
+
+    it 'parses relative time with days' do
+      get '/v2/graph_data/hashrate', miner: miner_a, since: '7d'
+      expect(last_response.status).to eq 200
+    end
+
+    it 'parses relative time with weeks' do
+      get '/v2/graph_data/hashrate', miner: miner_a, since: '2w'
+      expect(last_response.status).to eq 200
+    end
+
     it 'returns 400 for invalid since parameter' do
       get '/v2/graph_data/hashrate', since: 'banana'
 
@@ -258,6 +288,15 @@ RSpec.describe CgminerMonitor::HttpApp do
     end
   end
 
+  describe 'GET /docs' do
+    it 'returns Swagger UI HTML' do
+      get '/docs'
+      expect(last_response.status).to eq 200
+      expect(last_response.content_type).to include('text/html')
+      expect(last_response.body).to include('swagger-ui')
+    end
+  end
+
   describe 'GET /openapi.yml' do
     it 'serves the OpenAPI spec' do
       get '/openapi.yml'
@@ -280,6 +319,16 @@ RSpec.describe CgminerMonitor::HttpApp do
       get '/v2/nonexistent'
 
       expect(last_response.status).to eq 404
+    end
+
+    it 'returns 500 JSON for an unhandled internal error' do
+      allow(CgminerMonitor::SnapshotQuery).to receive(:miners).and_raise(RuntimeError, 'boom')
+
+      get '/v2/miners'
+
+      expect(last_response.status).to eq 500
+      body = JSON.parse(last_response.body)
+      expect(body['code']).to eq 'internal'
     end
   end
 end
