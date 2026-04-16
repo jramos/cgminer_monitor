@@ -5,6 +5,7 @@ require 'mongoid'
 require 'active_support/core_ext/string/inflections'
 
 require 'cgminer_monitor/errors'
+require 'cgminer_monitor/config'
 require 'cgminer_monitor/sample'
 require 'cgminer_monitor/snapshot'
 require 'cgminer_monitor/sample_query'
