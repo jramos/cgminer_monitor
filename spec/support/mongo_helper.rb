@@ -58,11 +58,11 @@ RSpec.configure do |config|
     db[:samples].drop
     db[:latest_snapshot].drop
     CgminerMonitor::Sample.create_collection
-    # Snapshot indexes are created after Snapshot model exists (Task 4)
+    CgminerMonitor::Snapshot.create_indexes
   end
 
   config.after do
     CgminerMonitor::Sample.collection.delete_many({})
-    # Snapshot cleanup added in Task 4
+    CgminerMonitor::Snapshot.collection.delete_many({})
   end
 end
