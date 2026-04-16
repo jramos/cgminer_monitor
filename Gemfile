@@ -8,6 +8,7 @@ gemspec
 gem 'ostruct' if RUBY_VERSION >= '3.5'
 
 group :development do
+  gem 'rack-test',     '>= 2.1'
   gem 'rake',          '>= 13.2'
   gem 'rspec',         '>= 3.13'
   gem 'rubocop',       '>= 1.60'

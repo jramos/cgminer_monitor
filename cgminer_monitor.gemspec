@@ -27,19 +27,19 @@ Gem::Specification.new do |spec|
 
   spec.files = Dir.glob([
                           "lib/**/*.rb",
-                          "lib/**/*.rake",
+                          "lib/**/*.yml",
                           "bin/*",
-                          "app/**/*.rb",
-                          "config/*.example",
-                          "config/routes.rb",
                           "README.md",
                           "LICENSE.txt",
                           "CHANGELOG.md",
                           "cgminer_monitor.gemspec"
                         ])
-  spec.executables   = spec.files.grep(%r{^bin/}) { |f| File.basename(f) }
+  spec.executables   = ["cgminer_monitor"]
   spec.require_paths = ["lib"]
 
   spec.add_dependency "cgminer_api_client", "~> 0.3.0"
   spec.add_dependency "mongoid",            "~> 9.0"
+  spec.add_dependency "puma",               ">= 6.0"
+  spec.add_dependency "rack-cors",          "~> 2.0"
+  spec.add_dependency "sinatra",            ">= 4.0"
 end
