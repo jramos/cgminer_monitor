@@ -78,7 +78,8 @@ RSpec.describe CgminerMonitor::Config do
 
     it 'raises ConfigError for non-integer interval' do
       env = valid_env.merge('CGMINER_MONITOR_INTERVAL' => 'abc')
-      expect { described_class.from_env(env) }.to raise_error(ArgumentError)
+      expect { described_class.from_env(env) }
+        .to raise_error(CgminerMonitor::ConfigError, /CGMINER_MONITOR_INTERVAL must be a valid integer/)
     end
   end
 

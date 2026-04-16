@@ -11,6 +11,21 @@ module CgminerMonitor
   class HttpApp < Sinatra::Base
     class << self
       attr_accessor :poller, :started_at
+
+      def configured_miners_cache
+        @configured_miners_cache ||= begin
+          miners_config = YAML.safe_load_file(Config.current.miners_file)
+          miners_config.map do |m|
+            host = m['host']
+            port = m['port'] || 4028
+            ["#{host}:#{port}", host, port]
+          end.freeze
+        end
+      end
+
+      def reset_configured_miners!
+        @configured_miners_cache = nil
+      end
     end
 
     set :show_exceptions, false
@@ -222,14 +237,11 @@ module CgminerMonitor
     end
 
     def configured_miners
-      @configured_miners ||= begin
-        miners_config = YAML.safe_load_file(Config.current.miners_file)
-        miners_config.map do |m|
-          host = m['host']
-          port = m['port'] || 4028
-          ["#{host}:#{port}", host, port]
-        end
-      end
+      self.class.configured_miners_cache
+    end
+
+    def prom_escape(value)
+      value.to_s.gsub('\\', '\\\\\\\\').gsub('"', '\\"').gsub("\n", '\\n')
     end
 
     def configured_miner_ids
@@ -298,7 +310,8 @@ module CgminerMonitor
     def mongo_reachable?
       Mongoid.default_client.database_names
       true
-    rescue StandardError
+    rescue Mongo::Error => e
+      Logger.warn(event: 'healthz.mongo_unreachable', error: e.class.to_s, message: e.message)
       false
     end
 
@@ -315,8 +328,8 @@ module CgminerMonitor
 
         ghs_5s = summary['GHS 5s'] || summary['ghs_5s']
         ghs_av = summary['GHS av'] || summary['ghs_av']
-        lines << "cgminer_hashrate_ghs{miner=\"#{snap.miner}\",window=\"5s\"} #{ghs_5s}" if ghs_5s
-        lines << "cgminer_hashrate_ghs{miner=\"#{snap.miner}\",window=\"avg\"} #{ghs_av}" if ghs_av
+        lines << "cgminer_hashrate_ghs{miner=\"#{prom_escape(snap.miner)}\",window=\"5s\"} #{ghs_5s}" if ghs_5s
+        lines << "cgminer_hashrate_ghs{miner=\"#{prom_escape(snap.miner)}\",window=\"avg\"} #{ghs_av}" if ghs_av
       end
 
       # Temperature gauges from latest devs snapshots
@@ -328,7 +341,7 @@ module CgminerMonitor
         devices = snap.response&.dig('DEVS') || []
         devices.each_with_index do |dev, i|
           temp = dev['Temperature'] || dev['temperature']
-          lines << "cgminer_temperature_celsius{miner=\"#{snap.miner}\",device=\"#{i}\"} #{temp}" if temp
+          lines << "cgminer_temperature_celsius{miner=\"#{prom_escape(snap.miner)}\",device=\"#{i}\"} #{temp}" if temp
         end
       end
 
@@ -340,7 +353,7 @@ module CgminerMonitor
       configured_miner_ids.each do |miner_id|
         latest = Snapshot.where(miner: miner_id).order_by(fetched_at: :desc).first
         available = latest&.ok ? 1 : 0
-        lines << "cgminer_available{miner=\"#{miner_id}\"} #{available}"
+        lines << "cgminer_available{miner=\"#{prom_escape(miner_id)}\"} #{available}"
       end
 
       # Polls counter

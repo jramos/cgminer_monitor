@@ -28,10 +28,12 @@ RSpec.describe CgminerMonitor::HttpApp do
 
     described_class.started_at = Time.now.utc - 100
     described_class.poller = nil
+    described_class.reset_configured_miners!
   end
 
   after do
     CgminerMonitor::Config.reset!
+    described_class.reset_configured_miners!
     FileUtils.rm_f(miners_file)
     described_class.started_at = nil
     described_class.poller = nil

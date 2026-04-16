@@ -7,7 +7,9 @@ module CgminerMonitor
 
     module_function
 
-    def hashrate(miner: nil, since: Time.now - 3600, until_: Time.now)
+    def hashrate(miner: nil, since: nil, until_: nil)
+      since  ||= Time.now.utc - 3600
+      until_ ||= Time.now.utc
       scope = time_range_scope(since, until_)
               .where('meta.command' => 'summary', 'meta.sub' => 0, 'meta.metric' => { '$in' => HASHRATE_METRICS })
       scope = scope.where('meta.miner' => miner) if miner
@@ -31,7 +33,9 @@ module CgminerMonitor
       end
     end
 
-    def temperature(miner: nil, since: Time.now - 3600, until_: Time.now)
+    def temperature(miner: nil, since: nil, until_: nil)
+      since  ||= Time.now.utc - 3600
+      until_ ||= Time.now.utc
       scope = time_range_scope(since, until_)
               .where('meta.command' => { '$in' => %w[devs stats] }, 'meta.metric' => /^temp/)
       scope = scope.where('meta.miner' => miner) if miner
@@ -46,7 +50,9 @@ module CgminerMonitor
       end
     end
 
-    def availability(miner: nil, since: Time.now - 3600, until_: Time.now)
+    def availability(miner: nil, since: nil, until_: nil)
+      since  ||= Time.now.utc - 3600
+      until_ ||= Time.now.utc
       scope = time_range_scope(since, until_)
               .where('meta.command' => 'poll', 'meta.metric' => 'ok')
       scope = scope.where('meta.miner' => miner) if miner

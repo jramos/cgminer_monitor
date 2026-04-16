@@ -32,6 +32,7 @@ RSpec.describe 'Healthz integration', :integration do
     CgminerMonitor::Config.reset!
     CgminerMonitor::HttpApp.started_at = nil
     CgminerMonitor::HttpApp.poller = nil
+    CgminerMonitor::HttpApp.reset_configured_miners!
     FileUtils.rm_f(miners_file)
   end
 

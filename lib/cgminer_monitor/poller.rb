@@ -36,8 +36,12 @@ module CgminerMonitor
                   polls_ok: @polls_ok,
                   polls_failed: @polls_failed)
     rescue Mongo::Error => e
-      @polls_failed += 1
+      increment_failed
       Logger.error(event: 'mongo.write_failed', error: e.class.to_s, message: e.message)
+    rescue StandardError => e
+      increment_failed
+      Logger.error(event: 'poll.unexpected_error', error: e.class.to_s,
+                   message: e.message, backtrace: e.backtrace&.first(10))
     end
 
     def run_until_stopped(_stop_channel)
@@ -82,7 +86,15 @@ module CgminerMonitor
 
       elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round(1)
       append_synthetic_samples(miner_id, miner_ok, elapsed_ms, now, all_samples)
-      miner_ok ? @polls_ok += 1 : @polls_failed += 1
+      miner_ok ? increment_ok : increment_failed
+    end
+
+    def increment_ok
+      @mutex.synchronize { @polls_ok += 1 }
+    end
+
+    def increment_failed
+      @mutex.synchronize { @polls_failed += 1 }
     end
 
     def process_success(miner_id, command, miner_result, now, all_samples, snapshot_ops)

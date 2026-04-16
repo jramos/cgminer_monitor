@@ -20,6 +20,7 @@ module CgminerMonitor
 
     def run
       install_signal_handlers # MUST install BEFORE Puma's Launcher.run
+      configure_mongoid!
       validate_startup!
       bootstrap_mongoid!
 
@@ -35,7 +36,13 @@ module CgminerMonitor
 
       poller_thread = Thread.new { @poller.run_until_stopped(@stop) }
       puma_launcher = build_puma_launcher
-      puma_thread   = Thread.new { puma_launcher.run }
+      puma_thread = Thread.new do
+        puma_launcher.run
+      rescue Exception => e # rubocop:disable Lint/RescueException
+        Logger.error(event: 'puma.crash', error: e.class.to_s,
+                     message: e.message, backtrace: e.backtrace&.first(10))
+        @stop << 'puma_crash'
+      end
       reinstall_signal_handlers # Re-install after Puma's setup_signals runs
 
       signal = @stop.pop # blocks until SIGTERM/SIGINT
@@ -54,7 +61,13 @@ module CgminerMonitor
       1
     end
 
-    # --- Startup validation ---
+    # --- Startup ---
+
+    def configure_mongoid!
+      Mongoid.configure do |c|
+        c.clients.default = { uri: @config.mongo_url }
+      end
+    end
 
     def validate_startup!
       # Verify miners.yml parses

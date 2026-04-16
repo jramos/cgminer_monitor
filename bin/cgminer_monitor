@@ -16,39 +16,52 @@ command = ARGV.first
 
 case command
 when 'run'
-  config = CgminerMonitor::Config.from_env
-  CgminerMonitor::Logger.format = config.log_format
-  CgminerMonitor::Logger.level = config.log_level
+  begin
+    config = CgminerMonitor::Config.from_env
+    CgminerMonitor::Logger.format = config.log_format
+    CgminerMonitor::Logger.level = config.log_level
 
-  server = CgminerMonitor::Server.new(config)
-  exit server.run
-
-when 'migrate'
-  config = CgminerMonitor::Config.from_env
-  CgminerMonitor::Logger.format = config.log_format
-  CgminerMonitor::Logger.level = config.log_level
-
-  Mongoid.configure do |c|
-    c.clients.default = { uri: config.mongo_url }
+    server = CgminerMonitor::Server.new(config)
+    exit server.run
+  rescue CgminerMonitor::ConfigError => e
+    warn "Configuration error: #{e.message}"
+    exit 78
   end
 
-  CgminerMonitor::Sample.store_in(
-    collection: 'samples',
-    collection_options: {
-      time_series: {
-        timeField: 'ts',
-        metaField: 'meta',
-        granularity: 'minutes'
-      },
-      expire_after: config.retention_seconds
-    }
-  )
-  CgminerMonitor::Sample.create_collection
-  CgminerMonitor::Snapshot.create_indexes
+when 'migrate'
+  begin
+    config = CgminerMonitor::Config.from_env
+    CgminerMonitor::Logger.format = config.log_format
+    CgminerMonitor::Logger.level = config.log_level
 
-  CgminerMonitor::Logger.info(event: 'migrate.complete',
-                              message: 'Collections created and indexes ensured')
-  puts 'migrate: done'
+    Mongoid.configure do |c|
+      c.clients.default = { uri: config.mongo_url }
+    end
+
+    CgminerMonitor::Sample.store_in(
+      collection: 'samples',
+      collection_options: {
+        time_series: {
+          timeField: 'ts',
+          metaField: 'meta',
+          granularity: 'minutes'
+        },
+        expire_after: config.retention_seconds
+      }
+    )
+    CgminerMonitor::Sample.create_collection
+    CgminerMonitor::Snapshot.create_indexes
+
+    CgminerMonitor::Logger.info(event: 'migrate.complete',
+                                message: 'Collections created and indexes ensured')
+    puts 'migrate: done'
+  rescue CgminerMonitor::ConfigError => e
+    warn "Configuration error: #{e.message}"
+    exit 78
+  rescue Mongo::Error => e
+    warn "MongoDB error during migration: #{e.class}: #{e.message}"
+    exit 1
+  end
 
 when 'doctor'
   config = CgminerMonitor::Config.from_env
