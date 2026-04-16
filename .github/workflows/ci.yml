@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    name: Ruby ${{ matrix.ruby }}
+    name: Ruby ${{ matrix.ruby }} / Mongo ${{ matrix.mongo }}
     runs-on: ubuntu-24.04
     continue-on-error: ${{ matrix.experimental == true }}
     strategy:
@@ -18,11 +18,27 @@ jobs:
           - '3.2'
           - '3.3'
           - '3.4'
+        mongo:
+          - '7'
         include:
+          - ruby: '3.4'
+            mongo: '6'
           - ruby: '4.0'
+            mongo: '7'
             experimental: true
           - ruby: head
+            mongo: '7'
             experimental: true
+
+    services:
+      mongo:
+        image: mongo:${{ matrix.mongo }}
+        ports:
+          - 27017:27017
+
+    env:
+      CGMINER_MONITOR_MONGO_URL: mongodb://localhost:27017/cgminer_monitor_test
+
     steps:
       - uses: actions/checkout@v4
 
