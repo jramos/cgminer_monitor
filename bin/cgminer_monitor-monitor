@@ -1,8 +1,0 @@
-#!/usr/bin/env ruby
-# frozen_string_literal: true
-
-# This is a cron job that ensures cgminer_monitor is running
-
-c = `pidof cgminer_monitor | wc -w`.strip
-
-puts `cgminer_monitor restart` unless c == '1'

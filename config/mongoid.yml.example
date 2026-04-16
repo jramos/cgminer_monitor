@@ -1,6 +1,0 @@
-production:
-  clients:
-    default:
-      database: cgminer_monitor
-      hosts:
-        - localhost:27017

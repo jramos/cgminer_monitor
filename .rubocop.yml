@@ -10,10 +10,6 @@ AllCops:
     - 'vendor/**/*'
     - 'coverage/**/*'
     - 'tmp/**/*'
-    - 'app/**/*'
-    - 'config/routes.rb'
-    - 'lib/cgminer_monitor/engine.rb'
-    - 'lib/tasks/**/*'
 
 Metrics/AbcSize:
   Enabled: false
@@ -47,18 +43,6 @@ Style/StringLiteralsInInterpolation:
   Enabled: false
 Style/Documentation:
   Enabled: false
-
-# Daemon uses rescue ::Exception, bare rescues, and Kernel#open.
-# The class is deleted in Phase 3; don't bother refactoring.
-Lint/RescueException:
-  Exclude:
-    - 'lib/cgminer_monitor/daemon.rb'
-Lint/SuppressedException:
-  Exclude:
-    - 'lib/cgminer_monitor/daemon.rb'
-Security/Open:
-  Exclude:
-    - 'lib/cgminer_monitor/daemon.rb'
 
 RSpec/AnyInstance:
   Enabled: false
