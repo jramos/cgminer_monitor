@@ -157,10 +157,10 @@ RSpec.describe CgminerMonitor::HttpApp do
       insert_samples(
         build_sample(miner: miner_a, command: 'summary', metric: 'ghs_5s', value: 1234.56, ts: now),
         build_sample(miner: miner_a, command: 'summary', metric: 'ghs_av', value: 1230.10, ts: now),
-        build_sample(miner: miner_a, command: 'summary', metric: 'device_hardware%', value: 0.001, ts: now),
-        build_sample(miner: miner_a, command: 'summary', metric: 'device_rejected%', value: 0.0, ts: now),
-        build_sample(miner: miner_a, command: 'summary', metric: 'pool_rejected%', value: 0.0, ts: now),
-        build_sample(miner: miner_a, command: 'summary', metric: 'pool_stale%', value: 0.0, ts: now)
+        build_sample(miner: miner_a, command: 'summary', metric: 'device_hardware_pct', value: 0.001, ts: now),
+        build_sample(miner: miner_a, command: 'summary', metric: 'device_rejected_pct', value: 0.0, ts: now),
+        build_sample(miner: miner_a, command: 'summary', metric: 'pool_rejected_pct', value: 0.0, ts: now),
+        build_sample(miner: miner_a, command: 'summary', metric: 'pool_stale_pct', value: 0.0, ts: now)
       )
     end
 

@@ -2,8 +2,8 @@
 
 module CgminerMonitor
   module SampleQuery
-    HASHRATE_METRICS = %w[ghs_5s ghs_av device_hardware% device_rejected% pool_rejected% pool_stale%].freeze
-    RATE_METRICS = %w[device_hardware% device_rejected% pool_rejected% pool_stale%].freeze
+    HASHRATE_METRICS = %w[ghs_5s ghs_av device_hardware_pct device_rejected_pct pool_rejected_pct pool_stale_pct].freeze
+    RATE_METRICS = %w[device_hardware_pct device_rejected_pct pool_rejected_pct pool_stale_pct].freeze
 
     module_function
 

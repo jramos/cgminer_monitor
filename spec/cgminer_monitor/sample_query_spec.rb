@@ -10,7 +10,8 @@ RSpec.describe CgminerMonitor::SampleQuery do
   describe '.hashrate' do
     before do
       # Two miners, two timestamps, summary metrics
-      %w[ghs_5s ghs_av device_hardware% device_rejected% pool_rejected% pool_stale%].each_with_index do |metric, i|
+      %w[ghs_5s ghs_av device_hardware_pct device_rejected_pct pool_rejected_pct
+         pool_stale_pct].each_with_index do |metric, i|
         insert_samples(
           build_sample(miner: miner_a, command: 'summary', metric: metric, value: (i + 1) * 10.0, ts: now),
           build_sample(miner: miner_b, command: 'summary', metric: metric, value: (i + 1) * 5.0, ts: now)
@@ -39,7 +40,7 @@ RSpec.describe CgminerMonitor::SampleQuery do
         expect(row[0]).to eq now.to_i
         expect(row[1]).to eq 15.0             # ghs_5s: 10 + 5
         expect(row[2]).to eq 30.0             # ghs_av: 20 + 10
-        # device_hardware% is averaged: (30 + 15) / 2 = 22.5
+        # device_hardware_pct is averaged: (30 + 15) / 2 = 22.5
         expect(row[3]).to be_within(0.01).of(22.5)
       end
     end

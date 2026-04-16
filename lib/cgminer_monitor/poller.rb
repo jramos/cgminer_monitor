@@ -140,7 +140,7 @@ module CgminerMonitor
     end
 
     def normalize_metric(field)
-      field.to_s.downcase.tr(' ', '_')
+      field.to_s.downcase.tr(' ', '_').gsub('%', '_pct')
     end
 
     def sample_hash(miner_id, command, sub, metric, value, ts)

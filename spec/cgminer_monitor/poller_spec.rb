@@ -113,8 +113,8 @@ RSpec.describe CgminerMonitor::Poller do
 
       metrics = samples.map { |s| s.meta['metric'] }
       expect(metrics).to include('ghs_5s', 'ghs_av', 'elapsed', 'hardware_errors',
-                                 'utility', 'device_hardware%', 'device_rejected%',
-                                 'pool_rejected%', 'pool_stale%', 'best_share')
+                                 'utility', 'device_hardware_pct', 'device_rejected_pct',
+                                 'pool_rejected_pct', 'pool_stale_pct', 'best_share')
 
       ghs_5s = samples.find { |s| s.meta['metric'] == 'ghs_5s' }
       expect(ghs_5s.v).to eq 1234.56

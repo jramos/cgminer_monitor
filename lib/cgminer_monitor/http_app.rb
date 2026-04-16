@@ -338,8 +338,9 @@ module CgminerMonitor
       lines << '# TYPE cgminer_available gauge'
 
       configured_miner_ids.each do |miner_id|
-        any_ok = Snapshot.where(miner: miner_id, ok: true).exists?
-        lines << "cgminer_available{miner=\"#{miner_id}\"} #{any_ok ? 1 : 0}"
+        latest = Snapshot.where(miner: miner_id).order_by(fetched_at: :desc).first
+        available = latest&.ok ? 1 : 0
+        lines << "cgminer_available{miner=\"#{miner_id}\"} #{available}"
       end
 
       # Polls counter
