@@ -5,25 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0] - 2026-04-15
 
-### Removed
-- Support for Ruby < 3.2. The gem now requires Ruby 3.2 or higher.
-- `rails` runtime dependency. The gem no longer ships a Rails engine.
-- `Mongoid.load!` at require time. Mongoid is now configured programmatically at startup.
-- `pry` development dependency.
+### Breaking changes
+- cgminer_monitor is now a **standalone HTTP service**, not a Rails engine. See [MIGRATION.md](MIGRATION.md) for upgrade instructions.
+- Removed the `CgminerMonitor::Engine`, all Rails controllers, and the v1 API (`/cgminer_monitor/api/v1/*`).
+- Removed `CgminerMonitor::Document` hierarchy (`Summary`, `Devs`, `Pools`, `Stats`, `Log`). Data is now stored in `samples` (time-series) and `latest_snapshot` (current-state) collections.
+- Removed `CgminerMonitor::Daemon` (start/stop/restart/status). Use `cgminer_monitor run` as a foreground process under your supervisor.
+- Removed `CgminerMonitor::Logger` (the old polling class). Replaced by `CgminerMonitor::Poller`.
+- Removed all rake tasks (`cgminer_monitor:create_indexes`, `cgminer_monitor:delete_logs`). Use `cgminer_monitor migrate` CLI command instead.
+- Removed `rails` runtime dependency.
+- Removed `config/mongoid.yml` — Mongoid is configured programmatically from `CGMINER_MONITOR_MONGO_URL`.
+- Ruby 3.2+ required (was Ruby 2.0).
+- MongoDB 5.0+ required (was MongoDB 2.6).
+
+### Added
+- Standalone HTTP API (Sinatra + Puma) with v2 endpoints.
+- `GET /v2/healthz` — liveness/readiness with starting/healthy/degraded states.
+- `GET /v2/metrics` — Prometheus text exposition endpoint.
+- `GET /v2/miners` — list configured miners with availability.
+- `GET /v2/miners/:miner/{summary,devices,pools,stats}` — current-state snapshots.
+- `GET /v2/graph_data/{hashrate,temperature,availability}` — time-series queries with ISO-8601 and relative time range parameters.
+- `GET /openapi.yml` and `GET /docs` — OpenAPI 3.1 spec and Swagger UI.
+- `cgminer_monitor run` — foreground server with graceful SIGTERM/SIGINT shutdown.
+- `cgminer_monitor migrate` — idempotent collection and index creation.
+- `cgminer_monitor doctor` — config validation, Mongo and miner connectivity checks.
+- `CgminerMonitor::Poller` — polls all configured miners, extracts numeric samples, writes to Mongo.
+- `CgminerMonitor::Sample` — Mongoid model for the `samples` time-series collection.
+- `CgminerMonitor::Snapshot` — Mongoid model for the `latest_snapshot` collection.
+- `CgminerMonitor::SampleQuery` / `CgminerMonitor::SnapshotQuery` — read-side query modules.
+- `CgminerMonitor::Config` — `Data.define` config object from environment variables.
+- `CgminerMonitor::Logger` — structured JSON/text logger (module, not the old polling class).
+- Environment variable configuration (see README.md for the full table).
+- CORS support via `rack-cors`.
+- Dockerfile (multi-stage) and docker-compose.yml with Mongo, cgminer_monitor, and optional FakeCgminer services.
+- Integration test suite: full pipeline, healthz states, CLI subprocess tests.
+- OpenAPI consistency spec — CI guard that routes and openapi.yml stay in sync.
+- GitHub Actions CI matrix: Ruby 3.2/3.3/3.4 + Mongo 6/7 (4.0 and head best-effort).
+- SimpleCov coverage tracking.
+- RuboCop with project-tuned config.
 
 ### Changed
 - `cgminer_api_client` dependency bumped to `~> 0.3.0`.
 - `mongoid` dependency bumped to `~> 9.0`.
-- `Logger#log!` now unwraps `PoolResult` from cgminer_api_client 0.3.0 (was: raw Array from 0.2.x).
-- Document writes use a single `save!` instead of three sequential `update_attribute` calls.
-- Gemspec modernized: `required_ruby_version`, metadata URIs, `rubygems_mfa_required`, `Dir.glob` file list.
+- Gemspec modernized: `required_ruby_version`, metadata URIs, `rubygems_mfa_required`.
 
-### Added
-- `.ruby-version` file (development Ruby version).
-- `.rubocop.yml` with project-tuned config.
-- GitHub Actions CI matrix (Ruby 3.2, 3.3, 3.4, 4.0 best-effort, head best-effort).
-- SimpleCov coverage tracking.
-- `frozen_string_literal: true` on all Ruby files.
-- Explicit `field :results` and `field :created_at` declarations on `Document::Log` for Mongoid 9 compatibility.
+### Known constraints
+- Mongoid 9 caps `bson < 6`. When bson 6 is released, cgminer_monitor cannot accept it until Mongoid 10 lands.
+- Mongoid 9's upstream CI only tests Ruby 3.3. Ruby 3.4 compatibility is asserted by our CI matrix but not by upstream; Ruby 4.0 and head are best-effort-only.
+- MongoDB 5.0 minimum is required for time-series collections. 6.0 is the closest version testable in GitHub Actions services; the floor claim is tested against 6.0 in CI as a proxy.
+- cgminer_api_client's `MinerPool#query` spawns one thread per miner with no upper bound. Not a problem at the expected scale (<=10 miners) but documented so that operators running >50 miners are aware.
+
+### Migration guide
+See [MIGRATION.md](MIGRATION.md) for a detailed guide on upgrading from 0.x.

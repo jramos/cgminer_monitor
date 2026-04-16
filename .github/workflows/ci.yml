@@ -7,6 +7,21 @@ on:
     branches: [master, develop]
 
 jobs:
+  lint:
+    name: RuboCop
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+
+      - name: Run RuboCop
+        run: bundle exec rubocop
+
   test:
     name: Ruby ${{ matrix.ruby }} / Mongo ${{ matrix.mongo }}
     runs-on: ubuntu-24.04
@@ -48,5 +63,60 @@ jobs:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
 
-      - name: Run tests and lint
-        run: bundle exec rake
+      - name: Run tests
+        run: bundle exec rspec --exclude-pattern 'spec/integration/**/*_spec.rb'
+
+  integration:
+    name: Integration / Ruby ${{ matrix.ruby }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby:
+          - '3.4'
+
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+
+    env:
+      CGMINER_MONITOR_MONGO_URL: mongodb://localhost:27017/cgminer_monitor_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler-cache: true
+
+      - name: Run integration tests
+        run: bundle exec rspec spec/integration/ -fd
+
+  openapi-check:
+    name: OpenAPI consistency
+    runs-on: ubuntu-24.04
+
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+
+    env:
+      CGMINER_MONITOR_MONGO_URL: mongodb://localhost:27017/cgminer_monitor_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+
+      - name: Check OpenAPI consistency
+        run: bundle exec rspec spec/openapi_consistency_spec.rb -fd
