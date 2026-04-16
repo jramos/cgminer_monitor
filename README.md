@@ -1,180 +1,185 @@
-# CgminerMonitor
+# cgminer_monitor
 
-A monitor for cgminer instances. It periodically captures device, status and summary information to MongoDB. It also provides a Rails engine to allow querying cgminer log information from within a Rails application. See [cgminer_manager](https://github.com/jramos/cgminer_manager) for an example of this type of integration.
+A standalone monitoring service for [cgminer](https://github.com/ckolivas/cgminer) instances. Periodically polls your miners over the cgminer API, stores device/pool/summary/stats data in MongoDB, and exposes an HTTP API for querying historical and current state.
 
 ## Requirements
 
-* [Ruby](https://www.ruby-lang.org) (~> 2.0.0, ~> 2.1.0)
-* [bundler](http://bundler.io/) (~> 1.6.0)
-* [mongodb](http://www.mongodb.org/) (~> 2.6)
-
-## Dependencies
-
-* [cgminer\_api\_client](https://github.com/jramos/cgminer_api_client) (~> 0.2.5)
-* mongoid (= 4.0.0)
-* rails (= 4.2.11)
-* rake (~> 10.0)
+- **Ruby** 3.2 or higher
+- **MongoDB** 5.0 or higher (6.0+ recommended; required for time-series collections)
+- **cgminer** instances with API access enabled (`--api-listen --api-allow W:0/0`)
 
 ## Installation
 
-### Bundler
-
-Add the following to your ``Gemfile``:
-
-    gem 'cgminer_monitor', '~> 0.2.23'
-
 ### RubyGems
 
-    $ gem install cgminer_monitor
+```
+gem install cgminer_monitor
+```
 
-### Manually
+### Bundler
 
-    $ git clone git@github.com:jramos/cgminer_monitor.git
+```ruby
+gem 'cgminer_monitor', '~> 1.0'
+```
+
+### Docker
+
+See [Running with Docker](#running-with-docker) below.
 
 ## Configuration
 
-### mongoid
+All configuration is via environment variables. No config files are needed except `miners.yml`.
 
-Copy [``config/mongoid.yml.example``](https://github.com/jramos/cgminer_monitor/blob/master/config/mongoid.yml.example) to ``config/mongoid.yml`` and update as necessary.
+| Variable | Default | Description |
+|---|---|---|
+| `CGMINER_MONITOR_INTERVAL` | `60` | Poll interval in seconds |
+| `CGMINER_MONITOR_RETENTION_SECONDS` | `2592000` (30 days) | Time-series data retention |
+| `CGMINER_MONITOR_MONGO_URL` | `mongodb://localhost:27017/cgminer_monitor` | MongoDB connection URI |
+| `CGMINER_MONITOR_HTTP_HOST` | `127.0.0.1` | HTTP server bind address |
+| `CGMINER_MONITOR_HTTP_PORT` | `9292` | HTTP server port |
+| `CGMINER_MONITOR_HTTP_MIN_THREADS` | `1` | Puma minimum threads |
+| `CGMINER_MONITOR_HTTP_MAX_THREADS` | `5` | Puma maximum threads |
+| `CGMINER_MONITOR_MINERS_FILE` | `config/miners.yml` | Path to miners YAML file |
+| `CGMINER_MONITOR_LOG_FORMAT` | `json` | Log format: `json` or `text` |
+| `CGMINER_MONITOR_LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
+| `CGMINER_MONITOR_CORS_ORIGINS` | `*` | CORS allowed origins (comma-separated, or `*`) |
+| `CGMINER_MONITOR_SHUTDOWN_TIMEOUT` | `10` | Graceful shutdown timeout in seconds |
+| `CGMINER_MONITOR_HEALTHZ_STALE_MULTIPLIER` | `2` | Multiplier on interval for stale-poll detection |
+| `CGMINER_MONITOR_HEALTHZ_STARTUP_GRACE` | `60` | Seconds to allow before first poll is expected |
 
-    production:
-      sessions:
-        default:
-          database: cgminer_monitor
-          hosts:
-            - localhost:27017
+### Miners file
 
-### cgminer\_api\_client
+Create a `config/miners.yml` with your cgminer instances:
 
-Copy [``config/miners.yml.example``](https://github.com/jramos/cgminer_monitor/blob/master/config/miners.yml.example) to ``config/miners.yml`` and update with the IP addresses (and optional ports and timeouts) of your cgminer instances. E.g.
+```yaml
+- host: 192.168.1.10
+  port: 4028
+  timeout: 5
+- host: 192.168.1.11
+  port: 4028
+```
 
-    # connect to localhost on the default port (4028) with the default timeout (5 seconds)
-    - host: 127.0.0.1
-    # connect to 192.168.1.1 on a non-standard port (1234) with a custom timeout (1 second)
-    - host: 192.168.1.1
-      port: 1234
-      timeout: 1
+## Running
 
-See [cgminer\_api\_client](https://github.com/jramos/cgminer_api_client#configuration) for more information.
+### Local
 
-## Indexing
+```bash
+# 1. Start MongoDB
+docker run -d --name cgminer-mongo -p 27017:27017 mongo:7
 
-After configuring mongoid, be sure to create the indexes for the log documents.
+# 2. Create collections (idempotent)
+cgminer_monitor migrate
 
-    $ rake cgminer_monitor:create_indexes
+# 3. Validate config + connectivity
+cgminer_monitor doctor
 
-## Monitoring Daemon
+# 4. Run the service
+cgminer_monitor run
+```
 
-### Starting
+The service runs in the foreground. Use your process supervisor (systemd, launchd, etc.) for production.
 
-    $ cgminer_monitor start
+### Running with Docker
 
-### Stopping
+```bash
+# Copy and edit miners config
+cp config/miners.yml.example config/miners.yml
 
-    $ cgminer_monitor stop
+# Start everything (Mongo + cgminer_monitor)
+docker-compose up
 
-### Restarting
+# Or just Mongo for local development
+docker-compose up -d mongo
+```
 
-    $ cgminer_monitor restart
+### systemd example
 
-### Checking Status
+```ini
+[Unit]
+Description=cgminer_monitor
+After=network.target mongod.service
 
-    $ cgminer_monitor status
+[Service]
+Type=simple
+User=cgminer
+WorkingDirectory=/opt/cgminer_monitor
+Environment=CGMINER_MONITOR_MONGO_URL=mongodb://localhost:27017/cgminer_monitor
+Environment=CGMINER_MONITOR_MINERS_FILE=/opt/cgminer_monitor/config/miners.yml
+ExecStartPre=/usr/local/bin/cgminer_monitor migrate
+ExecStart=/usr/local/bin/cgminer_monitor run
+Restart=on-failure
+RestartSec=5
 
-### Reporting version
+[Install]
+WantedBy=multi-user.target
+```
 
-    $ cgminer_monitor version
+## CLI Commands
 
-## Rails Engine
+| Command | Description |
+|---|---|
+| `cgminer_monitor run` | Start the monitoring service (foreground) |
+| `cgminer_monitor migrate` | Create MongoDB collections and indexes (idempotent) |
+| `cgminer_monitor doctor` | Validate config, test Mongo + miner connectivity |
+| `cgminer_monitor version` | Print version and exit |
 
-### Installation
+## API Reference
 
-Update your ``config/routes.rb`` file to mount the engine API endpoints:
+The HTTP API is available at `http://localhost:9292` by default. Interactive documentation is at [`/docs`](http://localhost:9292/docs) (Swagger UI).
 
-    mount CgminerMonitor::Engine => '/'
+### Endpoints
 
-### API Endpoints
+| Method | Path | Description |
+|---|---|---|
+| GET | `/v2/healthz` | Liveness/readiness check (200 healthy/starting, 503 degraded) |
+| GET | `/v2/metrics` | Prometheus text exposition endpoint |
+| GET | `/v2/miners` | List configured miners with availability |
+| GET | `/v2/miners/:miner/summary` | Latest summary snapshot for a miner |
+| GET | `/v2/miners/:miner/devices` | Latest devs snapshot for a miner |
+| GET | `/v2/miners/:miner/pools` | Latest pools snapshot for a miner |
+| GET | `/v2/miners/:miner/stats` | Latest stats snapshot for a miner |
+| GET | `/v2/graph_data/hashrate` | Hashrate time series |
+| GET | `/v2/graph_data/temperature` | Temperature time series (min/avg/max) |
+| GET | `/v2/graph_data/availability` | Availability time series |
+| GET | `/openapi.yml` | OpenAPI 3.1 specification |
+| GET | `/docs` | Swagger UI |
 
-#### Ping
+### Time range parameters
 
-Checks the status of the cgminer_monitor process. Response ``status`` element will either be "``running``" or "``stopped``".
+Graph data endpoints accept `since` and `until` query parameters in two formats:
 
-* ``/cgminer_monitor/api/v1/ping.json``
+- **ISO-8601:** `2026-04-15T12:00:00Z`
+- **Relative:** `1h`, `30m`, `7d`, `2w`
 
-Example response:
+Default range is the last hour when both are omitted.
 
-    {
-        "timestamp": 1407879277,
-        "status": "running"
-    }
+### Miner ID format
 
-#### Graph Data
+Miners are identified by `host:port` (e.g., `192.168.1.10:4028`). URL-encode the colon when using path parameters: `192.168.1.10%3A4028`.
 
-Each endpoint returns the previous hour's worth of data as a JSON array of data points.
+## Architecture
 
-##### Hashrates
+cgminer_monitor is a standalone process (not a Rails engine). It runs two threads:
 
-Endpoints:
+1. **Poller** — periodically queries all configured miners via `cgminer_api_client`, writes numeric samples to a MongoDB time-series collection (`samples`) and full responses to a regular collection (`latest_snapshot`).
+2. **HTTP server** (Puma + Sinatra) — serves the API from the MongoDB collections.
 
-* ``/cgminer_monitor/api/v1/graph_data/local_hashrate.json``
-* ``/cgminer_monitor/api/v1/graph_data/miner_hashrate.json?miner_id=<miner-id>``
+### Storage
 
-Data point response format:
+- **`samples`** — MongoDB time-series collection. Flat `{ts, meta, v}` rows. Each numeric field from each cgminer command becomes a sample. Used for graph data queries.
+- **`latest_snapshot`** — Regular collection. One document per `(miner, command)`, upserted each poll. Holds the full verbatim cgminer response. Used for current-state queries.
 
-    [
-        timestamp,
-        hashrate_5s,
-        hashrate_avg,
-        device_error_rate,
-        device_rejected_rate,
-        pool_rejected_rate,
-        pool_stale_rate
-    ]
+## Migration from 0.x
 
-##### Temperatures
+See [MIGRATION.md](MIGRATION.md) for a detailed guide on migrating from cgminer_monitor 0.x (the Rails engine version).
 
-Endpoints:
+## Security
 
-* ``/cgminer_monitor/api/v1/graph_data/local_temperature.json``
-* ``/cgminer_monitor/api/v1/graph_data/miner_temperature.json?miner_id=<miner-id>``
-
-Data point response format:
-
-    [
-        timestamp,
-        min_temp,
-        avg_temp,
-        max_temp
-    ]
-
-##### Availability
-
-Endpoints:
-
-* ``/cgminer_monitor/api/v1/graph_data/local_availability.json``
-* ``/cgminer_monitor/api/v1/graph_data/miner_availability.json?miner_id=<miner-id>``
-
-Data point response format:
-
-    [
-        timestamp,
-        num_available,
-        num_configured
-    ]
-
-### Cron
-
-There's a cron script that monitors the status of cgminer_monitor and restarts it when it discovers it is not running.
-
-#### Installation
-
-Add the following to ``/etc/crontab``:
-
-    */3 * * * *     <user>  cd <application root>; bundle exec cgminer_monitor-monitor
+The HTTP API has **no authentication or authorization**. It is designed for trusted local networks. If exposing to untrusted networks, place it behind a reverse proxy with authentication.
 
 ## Contributing
 
-1. Fork it ( https://github.com/jramos/cgminer_monitor/fork )
+1. Fork it (https://github.com/jramos/cgminer_monitor/fork)
 2. Create your feature branch (`git checkout -b my-new-feature`)
 3. Commit your changes (`git commit -am 'Add some feature'`)
 4. Push to the branch (`git push origin my-new-feature`)
@@ -182,9 +187,9 @@ Add the following to ``/etc/crontab``:
 
 ## Donating
 
-If you find this application useful, please consider donating.
+If you find this gem useful, please consider donating.
 
-BTC: ``bc1q00genlpcpcglgd4rezqcurf4t4taz0acmm9vea``
+BTC: `bc1q00genlpcpcglgd4rezqcurf4t4taz0acmm9vea`
 
 ## License
 
