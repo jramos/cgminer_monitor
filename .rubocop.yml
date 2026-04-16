@@ -32,6 +32,13 @@ Metrics/ModuleLength:
 Metrics/PerceivedComplexity:
   Enabled: false
 
+# Short parameter names (ok, ts, v) are idiomatic for Mongo helpers and models.
+Naming/MethodParameterName:
+  AllowedNames:
+    - ok
+    - ts
+    - v
+
 Style/StringLiterals:
   Enabled: false
 Style/StringLiteralsInInterpolation:
