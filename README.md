@@ -8,6 +8,14 @@ A standalone monitoring service for [cgminer](https://github.com/ckolivas/cgmine
 - **MongoDB** 5.0 or higher (6.0+ recommended; required for time-series collections)
 - **cgminer** instances with API access enabled (`--api-listen --api-allow W:0/0`)
 
+## Dependencies
+
+- [cgminer_api_client](https://github.com/jramos/cgminer_api_client) ~> 0.3.0
+- [mongoid](https://github.com/mongodb/mongoid) ~> 9.0
+- [sinatra](https://github.com/sinatra/sinatra) >= 4.0
+- [puma](https://github.com/puma/puma) >= 6.0
+- [rack-cors](https://github.com/cyu/rack-cors) ~> 2.0
+
 ## Installation
 
 ### RubyGems
@@ -46,6 +54,7 @@ All configuration is via environment variables. No config files are needed excep
 | `CGMINER_MONITOR_SHUTDOWN_TIMEOUT` | `10` | Graceful shutdown timeout in seconds |
 | `CGMINER_MONITOR_HEALTHZ_STALE_MULTIPLIER` | `2` | Multiplier on interval for stale-poll detection |
 | `CGMINER_MONITOR_HEALTHZ_STARTUP_GRACE` | `60` | Seconds to allow before first poll is expected |
+| `DEBUG` | unset | Set to `1` for full backtraces on crashes |
 
 ### Miners file
 
