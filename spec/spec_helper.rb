@@ -7,6 +7,9 @@ end
 
 require 'cgminer_monitor'
 
+# Load all support files (mongo_helper, etc.)
+Dir[File.expand_path('support/**/*.rb', __dir__)].each { |f| require f }
+
 RSpec.configure do |config|
   config.filter_run :focus
   config.run_all_when_everything_filtered = true
