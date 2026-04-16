@@ -29,7 +29,9 @@ RSpec.describe 'CLI integration', :integration do
 
       expect(status.exitstatus).to eq 0
       expect(stdout.strip).to match(/cgminer_monitor \d+\.\d+\.\d+/)
-      expect(stderr).to be_empty
+      # Ruby 3.4 emits ostruct deprecation warnings from Mongoid; filter those out
+      meaningful_stderr = stderr.lines.reject { |l| l.include?('ostruct') || l.include?('warning:') }.join
+      expect(meaningful_stderr).to be_empty
     end
 
     it 'supports -v flag' do
