@@ -36,7 +36,7 @@ module MongoTestHelpers
     CgminerMonitor::Sample.collection.insert_many(rows.flatten)
   end
 
-  def upsert_snapshot(miner:, command:, ok: true, response: {}, error: nil, # rubocop:disable Metrics/ParameterLists
+  def upsert_snapshot(miner:, command:, ok: true, response: {}, error: nil,
                       fetched_at: Time.now.utc)
     CgminerMonitor::Snapshot.collection.update_one(
       { "miner" => miner, "command" => command },
@@ -45,7 +45,7 @@ module MongoTestHelpers
     )
   end
 
-  def build_sample(miner:, command:, metric:, value:, sub: 0, ts: Time.now.utc) # rubocop:disable Metrics/ParameterLists
+  def build_sample(miner:, command:, metric:, value:, sub: 0, ts: Time.now.utc)
     { ts: ts, meta: { "miner" => miner, "command" => command, "sub" => sub, "metric" => metric }, v: value.to_f }
   end
 end
