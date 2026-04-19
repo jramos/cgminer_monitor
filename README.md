@@ -54,7 +54,6 @@ All configuration is via environment variables. No config files are needed excep
 | `CGMINER_MONITOR_SHUTDOWN_TIMEOUT` | `10` | Graceful shutdown timeout in seconds |
 | `CGMINER_MONITOR_HEALTHZ_STALE_MULTIPLIER` | `2` | Multiplier on interval for stale-poll detection |
 | `CGMINER_MONITOR_HEALTHZ_STARTUP_GRACE` | `60` | Seconds to allow before first poll is expected |
-| `DEBUG` | unset | Set to `1` for full backtraces on crashes |
 
 ### Miners file
 
