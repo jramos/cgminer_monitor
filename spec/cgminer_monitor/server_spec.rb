@@ -100,13 +100,6 @@ RSpec.describe CgminerMonitor::Server do
     end
   end
 
-  describe '.started_at / .poller accessors' do
-    it 'exposes class-level started_at' do
-      expect(described_class).to respond_to(:started_at)
-      expect(described_class).to respond_to(:started_at=)
-    end
-  end
-
   describe '#validate_startup!' do
     it 'does not raise when miners_file is valid and Mongo is reachable' do
       expect { server.send(:validate_startup!) }.not_to raise_error

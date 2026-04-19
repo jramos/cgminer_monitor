@@ -6,10 +6,6 @@ require 'puma/launcher'
 
 module CgminerMonitor
   class Server
-    class << self
-      attr_accessor :started_at, :poller
-    end
-
     attr_reader :config, :poller
 
     def initialize(config)
@@ -24,12 +20,11 @@ module CgminerMonitor
       validate_startup!
       bootstrap_mongoid!
 
-      self.class.started_at = Time.now.utc
-      self.class.poller = @poller
-
-      # Wire the poller into HttpApp so metrics/healthz can read it
+      # Wire the poller + started_at into HttpApp so metrics/healthz
+      # can read them. HttpApp owns this state; Server used to shadow
+      # it on itself but nothing read those copies.
       HttpApp.poller = @poller
-      HttpApp.started_at = self.class.started_at
+      HttpApp.started_at = Time.now.utc
 
       Logger.info(event: 'server.start', pid: Process.pid,
                   config: @config.public_attrs)
