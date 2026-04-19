@@ -132,6 +132,27 @@ WantedBy=multi-user.target
 | `cgminer_monitor doctor` | Validate config, test Mongo + miner connectivity |
 | `cgminer_monitor version` | Print version and exit |
 
+### Exit codes
+
+Exit codes follow [`sysexits(3)`](https://man.openbsd.org/sysexits.3):
+
+| Code | Meaning |
+|---|---|
+| `0` | Clean shutdown (signal-driven for `run`; normal completion for `migrate`/`doctor`/`version`). |
+| `1` | Unexpected crash (`run`), or a MongoDB error during `migrate`. |
+| `64` | `EX_USAGE` — unknown or missing command. |
+| `78` | `EX_CONFIG` — configuration validation failed (`run` or `migrate`). |
+
+### Logging
+
+The service writes structured log lines to stdout — one JSON object per line by default. Every line includes `ts`, `level`, `event`, plus event-specific fields. Library code never writes directly to stderr; the CLI itself only uses stderr for top-level error messages and usage hints.
+
+Toggles:
+- `CGMINER_MONITOR_LOG_FORMAT=text` switches to a tokenized `ts LEVEL event k=v` format for human reading. `json` (default) is what most log aggregators want.
+- `CGMINER_MONITOR_LOG_LEVEL` filters at `debug` / `info` / `warn` / `error`. Default is `info`; raise to `warn`/`error` to reduce volume in production, or drop to `debug` when troubleshooting.
+
+Notable events you'll see: `server.start`, `server.stopping`, `server.stopped`, `poll.complete`, `poll.miner_failed`, `poll.unexpected_error`, `mongo.write_failed`, `startup.mongo_unreachable`, `healthz.mongo_unreachable`, `http.unhandled_error`. Use these as the primary signal for monitoring pipelines.
+
 ## API Reference
 
 The HTTP API is available at `http://localhost:9292` by default. Interactive documentation is at [`/docs`](http://localhost:9292/docs) (Swagger UI).
@@ -185,6 +206,13 @@ See [MIGRATION.md](MIGRATION.md) for a detailed guide on migrating from cgminer_
 ## Security
 
 The HTTP API has **no authentication or authorization**. It is designed for trusted local networks. If exposing to untrusted networks, place it behind a reverse proxy with authentication.
+
+## Further Reading
+
+- [`CHANGELOG.md`](CHANGELOG.md) — release history, starting with the 1.0.0 ground-up rewrite.
+- [`MIGRATION.md`](MIGRATION.md) — step-by-step upgrade guide from the 0.x Rails-engine era.
+- [`AGENTS.md`](AGENTS.md) — context for AI coding assistants; also a useful conventions-and-extension guide for human contributors.
+- [`docs/`](docs/) — topic-split deep dives on architecture, components, interfaces, data models, workflows, and dependencies. Start with [`docs/index.md`](docs/index.md).
 
 ## Contributing
 

@@ -22,3 +22,8 @@ config/mongoid.yml
 
 # Gem lockfile (library gem — consumers generate their own)
 /Gemfile.lock
+
+# Override the global `docs/*` ignore so the AI-assistant docs in docs/*.md
+# track with the repo. The global rule still covers anything non-Markdown
+# that happens to land in docs/ (e.g. generated coverage HTML).
+!docs/*.md
