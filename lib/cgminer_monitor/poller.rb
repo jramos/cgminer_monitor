@@ -144,6 +144,11 @@ module CgminerMonitor
       rows
     end
 
+    # Only numeric values become samples. Booleans, nil, hashes, and
+    # non-numeric strings (device status, pool URL, worker name, etc.)
+    # return nil here and are silently skipped by extract_samples.
+    # The full response is still preserved in latest_snapshot, so no
+    # data is lost — just not duplicated into the time-series store.
     def to_numeric(value)
       case value
       when Integer, Float then value.to_f
