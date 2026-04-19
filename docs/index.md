@@ -46,7 +46,7 @@
 **Purpose:** Runtime deps (cgminer_api_client, mongoid, sinatra, puma, rack-cors) and dev deps. Ruby/Mongo version rationale. CI matrix (lint/test/integration/openapi-check jobs). Mongoid 9 ↔ BSON 6 constraint. **Read this for "can I add gem X?", "what Rubies does this support?", or "why is Mongoid pinned."**
 
 ### [`review_notes.md`](review_notes.md)
-**Purpose:** Self-audit. Consistency checks across other docs. Known gaps where the code is fuzzy (e.g., `DEBUG` env var documented but unwired, `StorageError`/`PollError` declared but unused, class-attr shadowing on Server/HttpApp). Cleanup recommendations with effort/value triage. **Read this before trusting a confident-sounding claim elsewhere in these docs.**
+**Purpose:** Self-audit. Consistency checks across other docs. Known gaps where the code is fuzzy (Mongo 5.0 floor not CI-tested, `Config.current` memoization thread-safety, no integration test for real-signal shutdown). Cleanup recommendations with effort/value triage. **Read this before trusting a confident-sounding claim elsewhere in these docs.**
 
 ## Example queries and where to go
 
@@ -56,7 +56,7 @@
 | "How do I add a new extracted metric?" | `components.md` (`Poller#extract_samples`) + `data_models.md` (sample meta shape) |
 | "What happens if Mongo goes away mid-poll?" | `architecture.md` (Poller error handling) + `workflows.md` (polling flow) + `interfaces.md` (Logger event names) |
 | "What's the CLI exit code when…?" | `interfaces.md` (CLI table) + `components.md` (bin/cgminer_monitor) |
-| "Why is `Server.started_at` read from `HttpApp.started_at`?" | `architecture.md` (class-level state pattern) + `review_notes.md` (gap #3) |
+| "Where does `/healthz` get `started_at` from?" | `components.md` (HttpApp class-level state) + `architecture.md` (read vs write decoupling) |
 | "Can I run this with MongoDB 4.4?" | `dependencies.md` (Mongo version support) — no, time-series requires 5.0+ |
 | "What's the schema of the `/v2/graph_data/hashrate` response?" | `interfaces.md` (HTTP API → Graph data) |
 | "Where does cgminer's `\"Pool Rejected%\"` end up in Mongo?" | `data_models.md` (Sample meta shape) — `metric: "pool_rejected_pct"` |

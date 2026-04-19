@@ -152,17 +152,15 @@ classDiagram
 classDiagram
     StandardError <|-- Error
     Error <|-- ConfigError
-    Error <|-- StorageError
-    Error <|-- PollError
 
     class Error { <<CgminerMonitor::Error>> }
     class ConfigError { raised by Config#validate! and env parsing }
-    class StorageError { declared, not raised }
-    class PollError { declared, not raised }
 ```
 
+- `Error` — base class for gem-specific errors. Rescuable with `rescue CgminerMonitor::Error`.
 - `ConfigError` — raised on bad env values and missing `miners.yml`; CLI translates to exit 78.
-- `StorageError`, `PollError` — reserved for future use. Currently, Mongo errors (`Mongo::Error` from the driver) are caught at the `Poller` boundary and logged rather than rewrapped, and polling-layer errors from `cgminer_api_client` are caught and attached to failed `Snapshot` docs rather than rewrapped.
+
+External errors (`Mongo::Error` from the driver, `CgminerApiClient::ConnectionError` / `ApiError` from the upstream client) are caught at their boundaries and either logged (`mongo.write_failed`, `poll.unexpected_error`) or attached to failed `Snapshot` docs (`ok: false, error: "<class>: <msg>"`) rather than rewrapped as gem-specific errors.
 
 ### PoolResult and MinerResult (from `cgminer_api_client`)
 

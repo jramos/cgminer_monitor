@@ -69,11 +69,11 @@ Top-level namespace. The file is only `require` statements for the other files p
 ### `CgminerMonitor::Error` and siblings
 **File:** `lib/cgminer_monitor/errors.rb`
 
-Four exception classes:
-- `Error < StandardError` — gem base.
-- `ConfigError < Error` — raised by `Config#validate!` and from `bin/cgminer_monitor` when env vars fail parsing.
-- `StorageError < Error` — reserved for Mongo-layer failures we want the app to treat specially. Currently declared but not raised (Mongo errors are caught at the Poller level and logged without being rewrapped).
-- `PollError < Error` — reserved for polling-layer failures. Currently declared but not raised.
+Two exception classes:
+- `Error < StandardError` — gem base. Catch this to handle everything gem-specific.
+- `ConfigError < Error` — raised by `Config#validate!` and from `bin/cgminer_monitor` when env vars fail parsing. Mapped to exit 78 at the CLI boundary.
+
+Mongo driver errors (`Mongo::Error`) and cgminer API errors (`CgminerApiClient::ConnectionError`, `CgminerApiClient::ApiError`) are caught at their respective boundaries and either logged or attached to failed snapshot docs rather than rewrapped as gem-specific errors.
 
 ### `CgminerMonitor::Config` (`Data.define`)
 **File:** `lib/cgminer_monitor/config.rb`
@@ -167,8 +167,6 @@ Responsibilities:
 - Spawn Poller and Puma threads; block on `@stop.pop`.
 - On signal: stop poller, `join` with shutdown timeout, stop launcher, `join` again, exit 0.
 - On `StandardError` in `run` body: log, exit 1. `ConfigError` from `validate_startup!` surfaces here — CLI translates any `ConfigError` to exit 78.
-
-Class-level attrs `Server.started_at` and `Server.poller` shadow the `HttpApp` ones (same values). Either could be removed without breaking behavior; both exist for historical reasons and symmetry.
 
 ### `CgminerMonitor::HttpApp` (Sinatra::Base)
 **File:** `lib/cgminer_monitor/http_app.rb`

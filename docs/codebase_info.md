@@ -32,7 +32,7 @@ cgminer_monitor/
 │   ├── cgminer_monitor.rb           # Entry point: require graph only
 │   └── cgminer_monitor/
 │       ├── config.rb                # Data.define Config, from_env, validate!, current/reset! helpers
-│       ├── errors.rb                # Error < StandardError, ConfigError, StorageError, PollError
+│       ├── errors.rb                # Error < StandardError, ConfigError
 │       ├── logger.rb                # Structured JSON/text logger (module singleton, thread-safe)
 │       ├── sample.rb                # Mongoid time-series model (samples collection)
 │       ├── sample_query.rb          # Read-side module: hashrate, temperature, availability series

@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- AI-assistant knowledge base under `docs/` (architecture, components,
+  interfaces, data models, workflows, dependencies, review notes,
+  plus an `index.md` router) and a consolidated `AGENTS.md` at the
+  repo root. Not packaged in the gem.
+- README subsections for CLI exit codes (0/1/64/78) and structured
+  logging, plus a Further Reading section linking to CHANGELOG,
+  MIGRATION, AGENTS, and docs/.
+- Code comment on `Poller#to_numeric` documenting the
+  drop-non-numeric-values policy used by sample extraction.
+
+### Removed
+- Unused `CgminerMonitor::StorageError` and
+  `CgminerMonitor::PollError` classes. Declared during the 1.0
+  rewrite but never raised by any code path. Callers using
+  `rescue CgminerMonitor::Error` are unaffected.
+- `CgminerMonitor::Server.started_at` and
+  `CgminerMonitor::Server.poller` class accessors. They mirrored
+  the `HttpApp` ones but were never read; the canonical readers
+  remain on `HttpApp`.
+- Undocumented-and-unwired `DEBUG` env var row from the README.
+  `Server#run` already logs backtraces on `server.crash`
+  unconditionally; no runtime toggle exists to control it.
+
 ## [1.0.0] - 2026-04-15
 
 ### Breaking changes

@@ -52,7 +52,7 @@ Library-level code never writes directly to stderr — everything flows through 
 
 ### Environment variables consumed by the CLI
 
-`DEBUG` — currently documented in the README env table as "set to `1` for full backtraces on crashes." In 1.0.0 the CLI doesn't actually branch on `DEBUG`; the Server logs `backtrace:` automatically on `server.crash`. Treat this as a planned knob rather than wired-up behavior. (Flagged in `review_notes.md`.)
+Backtrace logging on `server.crash` is unconditional — the `Exception#backtrace` array is always included in the error log entry. There is no runtime toggle for it.
 
 ## 2. Environment-variable config
 
@@ -74,7 +74,6 @@ All knobs are `ENV` reads at boot via `Config.from_env`. Defaults in parentheses
 | `CGMINER_MONITOR_SHUTDOWN_TIMEOUT` | `10` | Seconds to wait for each of Poller and Puma to stop during graceful shutdown. |
 | `CGMINER_MONITOR_HEALTHZ_STALE_MULTIPLIER` | `2` | Stale threshold = `interval * multiplier` seconds since last poll before `/healthz` returns `degraded`. |
 | `CGMINER_MONITOR_HEALTHZ_STARTUP_GRACE` | `60` | Seconds after boot during which a missing poll still reports `starting` rather than `degraded`. |
-| `DEBUG` | unset | Documented-but-not-yet-used toggle for backtrace printing (see above). |
 
 `Config#validate!` fails hard on: non-positive `interval`, unknown `log_format`, nonexistent `miners_file`, unknown `log_level`. Integer parse errors surface the offending env var name verbatim.
 

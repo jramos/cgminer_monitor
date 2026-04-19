@@ -39,7 +39,7 @@ A standalone Ruby daemon that polls [cgminer](https://github.com/ckolivas/cgmine
 ├── lib/cgminer_monitor.rb          # require graph only
 ├── lib/cgminer_monitor/
 │   ├── config.rb                   # Data.define Config from env, validation, redaction
-│   ├── errors.rb                   # Error < StandardError, ConfigError, StorageError*, PollError*
+│   ├── errors.rb                   # Error < StandardError, ConfigError
 │   ├── logger.rb                   # Structured JSON/text logger (module singleton, thread-safe)
 │   ├── sample.rb                   # Mongoid: samples (time-series, ts/meta/v)
 │   ├── sample_query.rb             # Read-side: hashrate, temperature, availability series
@@ -70,8 +70,6 @@ A standalone Ruby daemon that polls [cgminer](https://github.com/ckolivas/cgmine
 ├── README.md
 └── LICENSE.txt                     # MIT
 ```
-
-*`StorageError` and `PollError` are declared in `errors.rb` but not currently raised anywhere — shelfware from the 1.0 rewrite. See `docs/review_notes.md`.
 
 **What's packaged in the gem** (gemspec `spec.files`): `lib/**/*.rb`, `lib/**/*.yml` (the OpenAPI spec), `bin/*`, `README.md`, `LICENSE.txt`, `CHANGELOG.md`, `cgminer_monitor.gemspec`. Everything else (specs, configs, Docker, MIGRATION, `docs/`, CI workflows) is dev-only. Notably `config/miners.yml.example` is NOT packaged — the docker-compose expects the operator to mount their own.
 
@@ -133,7 +131,7 @@ bin/cgminer_monitor run
 
 ### Error handling
 
-- New errors should subclass `CgminerMonitor::Error` (and typically one of `ConfigError`, `StorageError`, `PollError`). Don't add a sibling class unless you have a real reason.
+- New errors should subclass `CgminerMonitor::Error` (or `ConfigError`, which is the only currently-populated child). Don't add a sibling class unless you have a raise site and tests ready in the same change.
 - **Rescue narrowly.** `Poller#poll_once` catches `Mongo::Error` separately from `StandardError` so Mongo outages show up as a distinct log event. Follow that pattern.
 - **Don't silently swallow.** The Poller's `rescue StandardError => e; increment_failed; Logger.error(...)` looks like a catch-all, but it's *logged* with backtrace. If you add a new rescue, log it too.
 - `Server#run`'s top-level `rescue StandardError` returns exit code 1. `ConfigError` caught in `bin/cgminer_monitor` returns exit 78. Don't route new errors through the generic path if they have a specific treatment.
@@ -244,15 +242,11 @@ These are real past-incident-shaped corners. Keep them in mind before "cleaning 
 
 5. **`HttpApp` has class-level state set by `Server` at boot.** If you add new state, add a `reset_*!` helper and call it in test setup. If you try to move it to instance state, you'll have to invent a way to get a reference to the current instance into Sinatra's class-level route blocks, which is the bad old dance.
 
-6. **`DEBUG=1` is documented in the README env table but not wired up.** `Server#run` logs backtraces on `server.crash` unconditionally. The env knob exists on paper only. Either wire it up or remove it — flagged in `docs/review_notes.md`.
+6. **`config/miners.yml` path is configurable via env var**, but the *default* is `'config/miners.yml'` which is CWD-relative. If you run `cgminer_monitor run` from a directory without a `config/` subdir, you need to set `CGMINER_MONITOR_MINERS_FILE` to an absolute path.
 
-7. **`StorageError` and `PollError` are declared but never raised.** Shelfware from the 1.0 rewrite. Don't refactor code to raise them without also making sure tests cover the new raising code paths.
+7. **`Mongo::Error` from `insert_many`/`bulk_write` is logged but not re-raised** in `Poller#poll_once`. So a mid-poll Mongo outage leaves the process running but with `polls_failed` climbing. This is intentional — the supervisor model owns restarts, and a transient Mongo blip shouldn't blow up the process. But it means `/healthz` → `degraded` is how you see it, not a process crash.
 
-8. **`config/miners.yml` path is configurable via env var**, but the *default* is `'config/miners.yml'` which is CWD-relative. If you run `cgminer_monitor run` from a directory without a `config/` subdir, you need to set `CGMINER_MONITOR_MINERS_FILE` to an absolute path.
-
-9. **`Mongo::Error` from `insert_many`/`bulk_write` is logged but not re-raised** in `Poller#poll_once`. So a mid-poll Mongo outage leaves the process running but with `polls_failed` climbing. This is intentional — the supervisor model owns restarts, and a transient Mongo blip shouldn't blow up the process. But it means `/healthz` → `degraded` is how you see it, not a process crash.
-
-10. **Out-of-band git changes are normal.** Don't treat surprising git state (uncommitted changes you didn't make, a new branch you didn't create) as a tool malfunction — the maintainer works outside the assistant session.
+8. **Out-of-band git changes are normal.** Don't treat surprising git state (uncommitted changes you didn't make, a new branch you didn't create) as a tool malfunction — the maintainer works outside the assistant session.
 
 ## Release process
 
