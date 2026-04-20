@@ -31,6 +31,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Server#run` already logs backtraces on `server.crash`
   unconditionally; no runtime toggle exists to control it.
 
+### Fixed
+- Dockerfile now generates a `cgminer_monitor` binstub during the
+  builder stage so `bundle exec cgminer_monitor <verb>` works inside
+  the image. Previously only the default ENTRYPOINT worked: running
+  any non-default verb (e.g. `migrate`, `version`) failed with
+  `bundler: command not found: cgminer_monitor`, because the gem's
+  executable was not installed on the image's PATH.
+
 ## [1.0.0] - 2026-04-15
 
 ### Breaking changes

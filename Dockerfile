@@ -13,7 +13,8 @@ COPY Gemfile cgminer_monitor.gemspec ./
 COPY lib/cgminer_monitor/version.rb lib/cgminer_monitor/version.rb
 
 RUN bundle config set --local without 'development' && \
-    bundle install --jobs 4
+    bundle install --jobs 4 && \
+    bundle binstubs cgminer_monitor --force --path /usr/local/bundle/bin
 
 COPY . .
 
