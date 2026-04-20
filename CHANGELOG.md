@@ -38,6 +38,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   any non-default verb (e.g. `migrate`, `version`) failed with
   `bundler: command not found: cgminer_monitor`, because the gem's
   executable was not installed on the image's PATH.
+- `docker-compose.yml` now overrides the Dockerfile's exec-form
+  ENTRYPOINT with `["sh", "-c"]` so the `migrate && run` chain
+  actually executes. Previously the chained command was appended to
+  the ENTRYPOINT as argv, leaving `cgminer_monitor` to receive `sh`
+  as its first argument and exit 64 (unknown command).
 
 ## [1.0.0] - 2026-04-15
 

@@ -26,10 +26,12 @@ services:
       CGMINER_MONITOR_MINERS_FILE: /app/config/miners.yml
     volumes:
       - ./config/miners.yml:/app/config/miners.yml:ro
-    # Run migrate first (idempotent), then the server
-    command: >
-      sh -c "bundle exec cgminer_monitor migrate &&
-             bundle exec cgminer_monitor run"
+    # Run migrate first (idempotent), then the server.
+    # Override the Dockerfile's exec-form ENTRYPOINT so `sh -c` runs;
+    # otherwise the command is passed as args to `cgminer_monitor`.
+    entrypoint: ["sh", "-c"]
+    command:
+      - "cgminer_monitor migrate && cgminer_monitor run"
 
   fake_cgminer:
     # Optional service for end-to-end testing without real miners.
