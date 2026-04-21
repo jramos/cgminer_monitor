@@ -44,7 +44,7 @@ graph LR
     end
 
     Srv -->|owns| Pol
-    Srv -->|sets class attrs on| App
+    Srv -->|HttpApp.set :poller/started_at/configured_miners| App
     Pol -->|writes| Smp
     Pol -->|writes| Snp
     App -->|reads via| SmpQ
@@ -163,7 +163,7 @@ Responsibilities:
 - Configure Mongoid from `config.mongo_url`.
 - `validate_startup!` — verify `miners.yml` parses non-empty and Mongo is reachable (raises `ConfigError` on empty, `Mongo::Error` on unreachable).
 - `bootstrap_mongoid!` — programmatic `store_in` + `create_collection` for `Sample`; `create_indexes` for `Snapshot`.
-- Wire up `HttpApp` class-level attrs (`.poller`, `.started_at`) for health-check and metrics access.
+- Wire up `HttpApp` Sinatra settings (`settings.poller`, `settings.started_at`, `settings.configured_miners`) for health-check and metrics access via `HttpApp.set :key, value`.
 - Spawn Poller and Puma threads; block on `@stop.pop`.
 - On signal: stop poller, `join` with shutdown timeout, stop launcher, `join` again, exit 0.
 - On `StandardError` in `run` body: log, exit 1. `ConfigError` from `validate_startup!` surfaces here — CLI translates any `ConfigError` to exit 78.
@@ -173,11 +173,12 @@ Responsibilities:
 
 The read side. Sinatra app mounted under Puma. All routes under `/v2/*`, plus `/openapi.yml` and `/docs`.
 
-Class-level state set by `Server` at boot:
-- `HttpApp.poller` — reference to the running `Poller` instance for metrics counters (`polls_ok`, `polls_failed`).
-- `HttpApp.started_at` — UTC Time, uptime source for `/healthz`.
-- `HttpApp.configured_miners_cache` — lazily-built frozen list of `[miner_id, host, port]` from `Config.current.miners_file`. Read by `/miners`, used to validate `:miner` path params.
-- `HttpApp.reset_configured_miners!` — test helper to clear the cache.
+App state lives in Sinatra settings, written by `Server#run` before Puma accepts its first request:
+- `settings.poller` — reference to the running `Poller` instance for metrics counters (`polls_ok`, `polls_failed`).
+- `settings.started_at` — UTC Time, uptime source for `/healthz`.
+- `settings.configured_miners` — eager-built frozen list of `[miner_id, host, port]` from `Config.current.miners_file`. Read by `/miners`, used to validate `:miner` path params. Defaults to `nil`; the `configured_miners` helper raises if read before Server populates it.
+- `HttpApp.parse_miners_file(path)` — lift-out of the old lazy body; used by `Server#run` and `configure_for_test!` to build the list.
+- `HttpApp.configure_for_test!(miners:, poller:, started_at:)` — spec-harness helper that sets all three settings in one call.
 
 Uses `Rack::Cors` middleware configured from `Config.current.cors_origins`. `show_exceptions` and `dump_errors` are off; a generic `error do` handler logs unhandled exceptions via `Logger.error` and returns `{"error": "internal"}` with HTTP 500. A `not_found` handler returns `{"error": "not found"}` with 404.
 

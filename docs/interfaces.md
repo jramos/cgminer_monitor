@@ -165,7 +165,7 @@ GET /v2/miners
 }
 ```
 
-The miners list is derived from `HttpApp.configured_miners_cache` (built once from `miners.yml`); `available` and `last_poll` come from `latest_snapshot`.
+The miners list is derived from `settings.configured_miners` (built once from `miners.yml` by `Server#run`); `available` and `last_poll` come from `latest_snapshot`.
 
 ### Per-miner snapshots
 

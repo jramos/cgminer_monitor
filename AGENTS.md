@@ -98,7 +98,7 @@ bin/cgminer_monitor run
 **Key structural facts:**
 
 1. **Two threads, one process, one `@stop` Queue.** Poller runs a `while !stopped` loop; Puma runs until `launcher.stop`. Main thread blocks on `@stop.pop` until a signal handler (or a Puma crash) pushes something.
-2. **`HttpApp` has class-level state** set by `Server` at boot: `.poller`, `.started_at`, `.configured_miners_cache`. Tests must call `HttpApp.reset_configured_miners!` between examples.
+2. **`HttpApp` state lives in Sinatra settings** set by `Server#run` at boot: `settings.poller`, `settings.started_at`, `settings.configured_miners`. Routes read `settings.foo`; tests use `HttpApp.configure_for_test!(miners:, poller:, started_at:)` to populate them.
 3. **`Config` is immutable.** `Data.define`. Validated once in `Config.from_env`. There's no hot reload. Config changes require a restart.
 4. **Mongoid is configured programmatically** from `CGMINER_MONITOR_MONGO_URL`. No `config/mongoid.yml` exists. This was explicit in the 1.0 rewrite.
 5. **`Sample.store_in` is called at runtime**, not as a class macro, because the `expire_after` depends on `Config#retention_seconds`. `Sample.create_collection` is called explicitly so the collection is actually time-series (not a regular lazy-created one).
@@ -146,7 +146,7 @@ bin/cgminer_monitor run
 - **`config.order = :random`** — specs must be order-independent.
 - **`mocks.verify_partial_doubles = true`** — doubles must match real method signatures.
 - Warnings are on in `.rspec`. Keep the suite warning-clean.
-- Between specs that touch `HttpApp.configured_miners_cache`, call `HttpApp.reset_configured_miners!`.
+- Specs that render routes call `HttpApp.configure_for_test!(miners:, poller:, started_at:)` in a `before` block to populate Sinatra settings.
 
 ## Running tests and lint
 
@@ -240,7 +240,7 @@ These are real past-incident-shaped corners. Keep them in mind before "cleaning 
 
 4. **`Sample` doesn't have `store_in` as a class macro.** It's called at runtime from `Server#bootstrap_mongoid!` (and from `cgminer_monitor migrate`) because the `expire_after` TTL depends on runtime config. `create_collection` is also called explicitly because Mongoid's lazy-create would make a regular collection, not a time-series one. Don't move the `store_in` back to class-load time.
 
-5. **`HttpApp` has class-level state set by `Server` at boot.** If you add new state, add a `reset_*!` helper and call it in test setup. If you try to move it to instance state, you'll have to invent a way to get a reference to the current instance into Sinatra's class-level route blocks, which is the bad old dance.
+5. **`HttpApp` state lives in Sinatra settings set by `Server#run` at boot.** If you add new state, add a `set :key, nil` alongside the existing ones and populate it in `Server#run` + `HttpApp.configure_for_test!`. Read in routes via `settings.key`. Defaults should be nil (or raise on access) for anything whose absence would silently lie to a caller.
 
 6. **`config/miners.yml` path is configurable via env var**, but the *default* is `'config/miners.yml'` which is CWD-relative. If you run `cgminer_monitor run` from a directory without a `config/` subdir, you need to set `CGMINER_MONITOR_MINERS_FILE` to an absolute path.
 

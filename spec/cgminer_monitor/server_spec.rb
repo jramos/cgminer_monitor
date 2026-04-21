@@ -45,6 +45,39 @@ RSpec.describe CgminerMonitor::Server do
     end
   end
 
+  describe '#run eager-populates HttpApp settings' do
+    # Pins the "state set once, before Puma accepts a request" invariant.
+    # A regression that went back to lazy-loading configured_miners — or
+    # that reordered these writes to happen after Puma boot — would make
+    # /v2/miners race with initialization.
+    before do
+      allow(server).to receive(:configure_mongoid!)
+      allow(server).to receive(:bootstrap_mongoid!)
+      allow(server).to receive(:validate_startup!)
+      allow(server).to receive(:install_signal_handlers)
+      allow(server).to receive(:reinstall_signal_handlers)
+      # Prevent the poller + puma threads from actually starting.
+      allow(server.poller).to receive(:run_until_stopped)
+      allow(server.poller).to receive(:stop)
+      fake_launcher = instance_double(Puma::Launcher, run: nil, stop: nil)
+      allow(server).to receive(:build_puma_launcher).and_return(fake_launcher)
+      # Push a signal immediately so #run doesn't block.
+      server.instance_variable_get(:@stop).push('TEST')
+    end
+
+    after do
+      CgminerMonitor::HttpApp.configure_for_test!(miners: nil, poller: nil, started_at: nil)
+    end
+
+    it 'writes poller, started_at, and configured_miners to HttpApp settings' do
+      server.run
+      expect(CgminerMonitor::HttpApp.settings.poller).to eq(server.poller)
+      expect(CgminerMonitor::HttpApp.settings.started_at).to be_a(Time)
+      expect(CgminerMonitor::HttpApp.settings.configured_miners)
+        .to eq([['10.0.0.5:4028', '10.0.0.5', 4028]])
+    end
+  end
+
   describe 'signal handling' do
     it 'installs TERM and INT signal handlers' do
       # Capture the signals that get trapped

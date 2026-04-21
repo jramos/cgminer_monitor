@@ -25,21 +25,21 @@ RSpec.describe 'Healthz integration', :integration do
       'CGMINER_MONITOR_HEALTHZ_STARTUP_GRACE' => '120'
     )
     CgminerMonitor::Config.instance_variable_set(:@current, config)
-    CgminerMonitor::HttpApp.poller = nil
+    CgminerMonitor::HttpApp.configure_for_test!(
+      miners: CgminerMonitor::HttpApp.parse_miners_file(miners_file)
+    )
   end
 
   after do
     CgminerMonitor::Config.reset!
-    CgminerMonitor::HttpApp.started_at = nil
-    CgminerMonitor::HttpApp.poller = nil
-    CgminerMonitor::HttpApp.reset_configured_miners!
+    CgminerMonitor::HttpApp.configure_for_test!(miners: nil, poller: nil, started_at: nil)
     FileUtils.rm_f(miners_file)
   end
 
   context 'starting state' do
     it 'returns 200 with status starting when within grace window and no polls yet' do
       # App just started, no polls have run yet
-      CgminerMonitor::HttpApp.started_at = Time.now.utc
+      CgminerMonitor::HttpApp.set :started_at, Time.now.utc
 
       get '/v2/healthz'
 
@@ -53,7 +53,7 @@ RSpec.describe 'Healthz integration', :integration do
 
   context 'healthy state' do
     it 'returns 200 with status healthy after a recent successful poll' do
-      CgminerMonitor::HttpApp.started_at = Time.now.utc - 300
+      CgminerMonitor::HttpApp.set :started_at, Time.now.utc - 300
 
       # Insert a recent snapshot
       upsert_snapshot(miner: '10.0.0.5:4028', command: 'summary', fetched_at: Time.now.utc - 10)
@@ -71,7 +71,7 @@ RSpec.describe 'Healthz integration', :integration do
 
   context 'degraded state — stale poll' do
     it 'returns 503 with status degraded when last poll exceeds 2x interval' do
-      CgminerMonitor::HttpApp.started_at = Time.now.utc - 600
+      CgminerMonitor::HttpApp.set :started_at, Time.now.utc - 600
 
       # Insert a stale snapshot (older than 2 * 60s = 120s)
       upsert_snapshot(miner: '10.0.0.5:4028', command: 'summary',
@@ -88,7 +88,7 @@ RSpec.describe 'Healthz integration', :integration do
   context 'degraded state — no polls and past grace window' do
     it 'returns 503 with status degraded when grace window has passed with no polls' do
       # App started 300s ago, grace window is 120s, and no polls exist
-      CgminerMonitor::HttpApp.started_at = Time.now.utc - 300
+      CgminerMonitor::HttpApp.set :started_at, Time.now.utc - 300
 
       get '/v2/healthz'
 
@@ -100,7 +100,7 @@ RSpec.describe 'Healthz integration', :integration do
 
   context 'degraded state — failed miner' do
     it 'reports miners_available correctly when a miner is down' do
-      CgminerMonitor::HttpApp.started_at = Time.now.utc - 300
+      CgminerMonitor::HttpApp.set :started_at, Time.now.utc - 300
 
       upsert_snapshot(miner: '10.0.0.5:4028', command: 'summary',
                       ok: false, error: 'Connection refused',

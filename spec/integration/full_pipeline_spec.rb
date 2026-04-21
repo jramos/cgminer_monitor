@@ -26,18 +26,18 @@ RSpec.describe 'Full pipeline integration', :integration do
         'CGMINER_MONITOR_CORS_ORIGINS' => '*'
       )
       CgminerMonitor::Config.instance_variable_set(:@current, config)
-      CgminerMonitor::HttpApp.started_at = Time.now.utc
-      CgminerMonitor::HttpApp.poller = nil
 
       ctx[:poller] = CgminerMonitor::Poller.new(config)
-      CgminerMonitor::HttpApp.poller = ctx[:poller]
+      CgminerMonitor::HttpApp.configure_for_test!(
+        miners: CgminerMonitor::HttpApp.parse_miners_file(miners_file),
+        poller: ctx[:poller],
+        started_at: Time.now.utc
+      )
 
       example.run
 
       CgminerMonitor::Config.reset!
-      CgminerMonitor::HttpApp.started_at = nil
-      CgminerMonitor::HttpApp.poller = nil
-      CgminerMonitor::HttpApp.reset_configured_miners!
+      CgminerMonitor::HttpApp.configure_for_test!(miners: nil, poller: nil, started_at: nil)
       FileUtils.rm_f(miners_file)
     end
   end

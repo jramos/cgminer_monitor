@@ -20,11 +20,13 @@ module CgminerMonitor
       validate_startup!
       bootstrap_mongoid!
 
-      # Wire the poller + started_at into HttpApp so metrics/healthz
-      # can read them. HttpApp owns this state; Server used to shadow
-      # it on itself but nothing read those copies.
-      HttpApp.poller = @poller
-      HttpApp.started_at = Time.now.utc
+      # Wire app state into HttpApp's Sinatra settings so routes can
+      # read via `settings.foo`. Server owns the write; HttpApp owns
+      # the read. All writes happen here, before Puma accepts its
+      # first request — no lazy loading, no per-request config drift.
+      HttpApp.set :poller,             @poller
+      HttpApp.set :started_at,         Time.now.utc
+      HttpApp.set :configured_miners,  HttpApp.parse_miners_file(@config.miners_file)
 
       Logger.info(event: 'server.start', pid: Process.pid,
                   config: @config.public_attrs)

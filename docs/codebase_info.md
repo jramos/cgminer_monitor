@@ -122,7 +122,7 @@ graph TB
 
     HttpApp -->|reads via| SampleQ
     HttpApp -->|reads via| SnapshotQ
-    HttpApp -.reads class attr.-> Poller
+    HttpApp -.reads settings.poller.-> Poller
     SampleQ -->|queries| Sample
     SnapshotQ -->|queries| Snapshot
 
@@ -140,7 +140,7 @@ graph TB
 2. **`Config` is immutable** (`Data.define`). No hot reload. Changing env vars requires a restart.
 3. **Mongoid is configured programmatically** from `CGMINER_MONITOR_MONGO_URL` — there is no `config/mongoid.yml` in 1.0.
 4. **`miners.yml` is loaded at boot** and frozen. Adding/removing miners requires a restart.
-5. **`HttpApp` has class-level state** (`.poller`, `.started_at`, `.configured_miners_cache`) set by `Server` at boot. Tests must call `HttpApp.reset_configured_miners!` between examples.
+5. **`HttpApp` state lives in Sinatra settings** (`settings.poller`, `settings.started_at`, `settings.configured_miners`) set by `Server#run` at boot. Tests use `HttpApp.configure_for_test!(miners:, poller:, started_at:)` to populate them.
 6. **The samples collection is a MongoDB time-series collection** (Mongo 5.0+ feature) with an `expire_after` TTL matching `CGMINER_MONITOR_RETENTION_SECONDS`. `cgminer_monitor migrate` (or `Server#bootstrap_mongoid!`) does the `create_collection` call.
 7. **No authentication on the HTTP API.** Designed for trusted networks. Put a reverse proxy in front of it if you're exposing it beyond that.
 8. **`cgminer_api_client` is a hard runtime dependency.** The `Poller` bypasses `CgminerApiClient::MinerPool.new` (which hard-codes a `config/miners.yml` path relative to CWD) by allocating the pool and setting `.miners=` directly, so it can honor the configurable `CGMINER_MONITOR_MINERS_FILE`.
