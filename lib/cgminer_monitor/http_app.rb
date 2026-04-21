@@ -9,28 +9,37 @@ require 'time'
 
 module CgminerMonitor
   class HttpApp < Sinatra::Base
-    class << self
-      attr_accessor :poller, :started_at
-
-      def configured_miners_cache
-        @configured_miners_cache ||= begin
-          miners_config = YAML.safe_load_file(Config.current.miners_file)
-          miners_config.map do |m|
-            host = m['host']
-            port = m['port'] || 4028
-            ["#{host}:#{port}", host, port]
-          end.freeze
-        end
-      end
-
-      def reset_configured_miners!
-        @configured_miners_cache = nil
-      end
-    end
-
     set :show_exceptions, false
     set :dump_errors, false
     set :host_authorization, { permitted_hosts: [] }
+
+    # App state set by Server#run before Puma accepts its first request.
+    # Defaults intentionally `nil` so an unconfigured App fails loud on the
+    # first read rather than silently returning empty data. See the
+    # `configured_miners` helper below.
+    set :poller,            nil
+    set :started_at,        nil
+    set :configured_miners, nil
+
+    # Wraps the raw YAML parse behind a stable shape so Server#run (and
+    # the test helper below) can eager-populate `settings.configured_miners`.
+    # Returns a frozen Array of `[miner_id, host, port]` tuples.
+    def self.parse_miners_file(path)
+      YAML.safe_load_file(path).map do |m|
+        host = m['host']
+        port = m['port'] || 4028
+        ["#{host}:#{port}", host, port]
+      end.freeze
+    end
+
+    # Spec convenience. Keeps the "set every setting in one place" shape so
+    # the test-order footgun doesn't reopen if someone adds a new setting
+    # and forgets to null it out in between examples.
+    def self.configure_for_test!(miners:, poller: nil, started_at: nil)
+      set :configured_miners, miners
+      set :poller,             poller
+      set :started_at,         started_at || Time.now.utc
+    end
 
     configure do
       use Rack::Cors do
@@ -216,7 +225,7 @@ module CgminerMonitor
       last_poll_age_s = last_poll ? (Time.now.utc - last_poll).to_i : nil
       miners_available = miners_info.count { |m| m[:ok] }
 
-      app_started_at = self.class.started_at
+      app_started_at = settings.started_at
       uptime_s = app_started_at ? (Time.now.utc - app_started_at).to_i : 0
       stale_threshold = config.interval * config.healthz_stale_multiplier
 
@@ -236,8 +245,12 @@ module CgminerMonitor
       }
     end
 
+    # Fail-loud accessor — an unconfigured App raises a clear error
+    # instead of silently returning an empty miners list.
     def configured_miners
-      self.class.configured_miners_cache
+      settings.configured_miners || raise(
+        'HttpApp not configured; call Server#run or configure_for_test!'
+      )
     end
 
     def prom_escape(value)
@@ -361,7 +374,7 @@ module CgminerMonitor
       lines << '# HELP cgminer_monitor_polls_total Total polls performed'
       lines << '# TYPE cgminer_monitor_polls_total counter'
 
-      poller = self.class.poller
+      poller = settings.poller
       if poller
         lines << "cgminer_monitor_polls_total{result=\"ok\"} #{poller.polls_ok}"
         lines << "cgminer_monitor_polls_total{result=\"failed\"} #{poller.polls_failed}"

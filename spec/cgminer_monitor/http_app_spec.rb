@@ -26,17 +26,17 @@ RSpec.describe CgminerMonitor::HttpApp do
     )
     CgminerMonitor::Config.instance_variable_set(:@current, config)
 
-    described_class.started_at = Time.now.utc - 100
-    described_class.poller = nil
-    described_class.reset_configured_miners!
+    described_class.configure_for_test!(
+      miners: described_class.parse_miners_file(miners_file),
+      poller: nil,
+      started_at: Time.now.utc - 100
+    )
   end
 
   after do
     CgminerMonitor::Config.reset!
-    described_class.reset_configured_miners!
     FileUtils.rm_f(miners_file)
-    described_class.started_at = nil
-    described_class.poller = nil
+    described_class.configure_for_test!(miners: nil, poller: nil, started_at: nil)
   end
 
   describe 'GET /v2/healthz' do
