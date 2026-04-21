@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **CI publishes multi-arch container images on `v*` tag push.** New
+  `.github/workflows/release.yml` builds `linux/amd64` + `linux/arm64`
+  images on native GitHub-hosted runners and pushes to
+  `ghcr.io/jramos/cgminer_monitor` with semver-derived tags
+  (`1.2.3` / `1.2` / `1` / `latest`, prerelease-safe) plus SLSA
+  provenance and CycloneDX SBOM attestations. A `workflow_dispatch`
+  entry point runs ad-hoc builds with a user-supplied tag
+  (default `edge`) for smoke tests.
+
 ### Changed
 - **`HttpApp` class-level state moved to Sinatra `settings`.** `poller`,
   `started_at`, and `configured_miners` are now declared via `set :key,

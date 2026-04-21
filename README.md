@@ -89,11 +89,22 @@ The service runs in the foreground. Use your process supervisor (systemd, launch
 
 ### Running with Docker
 
+Multi-arch images (`linux/amd64` + `linux/arm64`) are published from CI to
+GHCR on every `v*` tag push:
+
+```bash
+docker pull ghcr.io/jramos/cgminer_monitor:latest
+# or pin to a specific release:
+docker pull ghcr.io/jramos/cgminer_monitor:1.0
+```
+
+Run with the full stack (Mongo + cgminer_monitor):
+
 ```bash
 # Copy and edit miners config
 cp config/miners.yml.example config/miners.yml
 
-# Start everything (Mongo + cgminer_monitor)
+# Start everything
 docker-compose up
 
 # Or just Mongo for local development
