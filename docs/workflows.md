@@ -42,7 +42,7 @@ sequenceDiagram
     Server->>Sample: create_collection
     Server->>Snapshot: create_indexes
 
-    Server->>HttpApp: HttpApp.poller = poller / .started_at = now
+    Server->>HttpApp: HttpApp.set :poller/:started_at/:configured_miners
     Server->>Logger: Logger.info 'server.start'
 
     Server->>Poller: Thread.new { poller.run_until_stopped }

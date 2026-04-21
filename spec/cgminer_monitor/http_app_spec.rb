@@ -39,6 +39,34 @@ RSpec.describe CgminerMonitor::HttpApp do
     described_class.configure_for_test!(miners: nil, poller: nil, started_at: nil)
   end
 
+  describe 'configure_for_test! teardown symmetry' do
+    # Guards the sentinel-based default introduced for started_at:.
+    # Passing `started_at: nil` explicitly MUST clear the setting —
+    # the old `|| Time.now.utc` fallback silently re-populated it.
+    it 'clears settings.started_at when passed started_at: nil explicitly' do
+      described_class.configure_for_test!(miners: nil, poller: nil, started_at: nil)
+      expect(described_class.settings.started_at).to be_nil
+    end
+
+    it 'defaults settings.started_at to Time.now.utc when started_at: is omitted' do
+      described_class.configure_for_test!(miners: nil)
+      expect(described_class.settings.started_at).to be_within(2).of(Time.now.utc)
+    end
+  end
+
+  describe 'fail-loud guard on unconfigured HttpApp' do
+    # A future refactor that swapped the `set :configured_miners, nil`
+    # default to `[]` or equivalent would make /v2/miners silently
+    # return an empty list on a misconfigured deploy. This spec pins
+    # the fail-loud contract.
+    it 'raises from the configured_miners helper when settings.configured_miners is nil' do
+      described_class.set :configured_miners, nil
+      app_instance = described_class.new!
+      expect { app_instance.send(:configured_miners) }
+        .to raise_error(/HttpApp not configured/)
+    end
+  end
+
   describe 'GET /v2/healthz' do
     context 'when mongo is reachable and a recent poll exists' do
       before do

@@ -56,7 +56,7 @@
 | "How do I add a new extracted metric?" | `components.md` (`Poller#extract_samples`) + `data_models.md` (sample meta shape) |
 | "What happens if Mongo goes away mid-poll?" | `architecture.md` (Poller error handling) + `workflows.md` (polling flow) + `interfaces.md` (Logger event names) |
 | "What's the CLI exit code when…?" | `interfaces.md` (CLI table) + `components.md` (bin/cgminer_monitor) |
-| "Where does `/healthz` get `started_at` from?" | `components.md` (HttpApp class-level state) + `architecture.md` (read vs write decoupling) |
+| "Where does `/healthz` get `started_at` from?" | `components.md` (HttpApp Sinatra settings) + `architecture.md` (read vs write decoupling) |
 | "Can I run this with MongoDB 4.4?" | `dependencies.md` (Mongo version support) — no, time-series requires 5.0+ |
 | "What's the schema of the `/v2/graph_data/hashrate` response?" | `interfaces.md` (HTTP API → Graph data) |
 | "Where does cgminer's `\"Pool Rejected%\"` end up in Mongo?" | `data_models.md` (Sample meta shape) — `metric: "pool_rejected_pct"` |

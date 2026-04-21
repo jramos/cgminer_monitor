@@ -122,7 +122,7 @@ graph TB
 
     HttpApp -->|reads via| SampleQ
     HttpApp -->|reads via| SnapshotQ
-    HttpApp -.reads class attr.-> Poller
+    HttpApp -.reads settings.poller.-> Poller
     SampleQ -->|queries| Sample
     SnapshotQ -->|queries| Snapshot
 

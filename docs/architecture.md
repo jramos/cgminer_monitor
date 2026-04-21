@@ -4,7 +4,7 @@
 
 1. **One process, foreground, supervisor-driven.** No PID files, no `daemonize`, no `start`/`stop`/`restart` subcommands. The CLI has `run` only; `systemd`/`docker`/`launchd` own the lifecycle. This was a deliberate simplification in the 1.0 rewrite.
 2. **Two concurrent threads, one exit path.** A polling thread and an HTTP server thread. Both feed failures into a shared `Queue` that unblocks the main thread to drive graceful shutdown. No watchdog, no restart logic — if either thread can't keep going, the process exits and the supervisor restarts.
-3. **Write-path and read-path are fully decoupled via Mongo.** The Poller writes samples + snapshots. The HTTP server reads them. Neither holds a live reference to the other's data structures beyond a few class-level attrs (`HttpApp.poller` is read for metrics counters, not for call-through).
+3. **Write-path and read-path are fully decoupled via Mongo.** The Poller writes samples + snapshots. The HTTP server reads them. Neither holds a live reference to the other's data structures beyond a few Sinatra settings (`settings.poller` is read for metrics counters, not for call-through).
 4. **Structural separation between "current state" and "time series".** Two MongoDB collections, two Mongoid models, two query modules. See `data_models.md`.
 5. **Config is immutable at boot.** `Data.define` Config, validated once in `from_env`, never mutated. Changing anything requires a restart. Justified by the operational model (supervisor-driven, cheap to restart).
 6. **Library code logs structurally, never to stderr directly.** One logger module; everything else calls it. See `components.md` for the logger contract.

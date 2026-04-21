@@ -32,13 +32,23 @@ module CgminerMonitor
       end.freeze
     end
 
+    # Sentinel so the default "give me a current timestamp" behavior for
+    # `started_at:` stays available without making nil-as-explicit-clear
+    # impossible to express.
+    STARTED_AT_DEFAULT = Object.new.freeze
+    private_constant :STARTED_AT_DEFAULT
+
     # Spec convenience. Keeps the "set every setting in one place" shape so
     # the test-order footgun doesn't reopen if someone adds a new setting
     # and forgets to null it out in between examples.
-    def self.configure_for_test!(miners:, poller: nil, started_at: nil)
+    #
+    # Omitting `started_at:` defaults to `Time.now.utc`. Passing `nil`
+    # explicitly writes `nil` — use this in `after` blocks to clear the
+    # setting.
+    def self.configure_for_test!(miners:, poller: nil, started_at: STARTED_AT_DEFAULT)
       set :configured_miners, miners
       set :poller,             poller
-      set :started_at,         started_at || Time.now.utc
+      set :started_at,         started_at.equal?(STARTED_AT_DEFAULT) ? Time.now.utc : started_at
     end
 
     configure do

@@ -44,7 +44,7 @@ graph LR
     end
 
     Srv -->|owns| Pol
-    Srv -->|sets class attrs on| App
+    Srv -->|HttpApp.set :poller/started_at/configured_miners| App
     Pol -->|writes| Smp
     Pol -->|writes| Snp
     App -->|reads via| SmpQ
@@ -163,7 +163,7 @@ Responsibilities:
 - Configure Mongoid from `config.mongo_url`.
 - `validate_startup!` — verify `miners.yml` parses non-empty and Mongo is reachable (raises `ConfigError` on empty, `Mongo::Error` on unreachable).
 - `bootstrap_mongoid!` — programmatic `store_in` + `create_collection` for `Sample`; `create_indexes` for `Snapshot`.
-- Wire up `HttpApp` class-level attrs (`.poller`, `.started_at`) for health-check and metrics access.
+- Wire up `HttpApp` Sinatra settings (`settings.poller`, `settings.started_at`, `settings.configured_miners`) for health-check and metrics access via `HttpApp.set :key, value`.
 - Spawn Poller and Puma threads; block on `@stop.pop`.
 - On signal: stop poller, `join` with shutdown timeout, stop launcher, `join` again, exit 0.
 - On `StandardError` in `run` body: log, exit 1. `ConfigError` from `validate_startup!` surfaces here — CLI translates any `ConfigError` to exit 78.
