@@ -178,17 +178,17 @@ sequenceDiagram
 
 **Key observations:**
 - The read path never hits cgminer directly. Everything it returns was written by the Poller at the last poll interval.
-- `HttpApp.configured_miners_cache` is lazily built on first access from `Config.current.miners_file`. It's frozen; only cleared via `HttpApp.reset_configured_miners!` (tests only).
+- `settings.configured_miners` is eager-built by `Server#run` from `Config.current.miners_file` via `HttpApp.parse_miners_file`. Frozen. Specs populate it via `HttpApp.configure_for_test!(miners: …)`.
 - Time-range parameters accept ISO-8601 or relative (`1h`, `30m`, `7d`, `2w`). Defaults to the last hour.
 - `Cache-Control: public, max-age=<interval>` is set on graph data responses so intermediate caches don't hammer Mongo.
-- `miner_snapshot` validates that the `:miner` path param exists in `configured_miners_cache` and returns 404 if not — an unknown miner ID can't even check the db.
+- `miner_snapshot` validates that the `:miner` path param exists in `settings.configured_miners` and returns 404 if not — an unknown miner ID can't even check the db.
 
 ## HTTP API surface summary
 
 All under `/v2/*`. See `interfaces.md` for the full contract.
 
 - **`/healthz`** — returns one of `starting` / `healthy` / `degraded` plus diagnostics. HTTP 200 for healthy and starting, 503 for degraded.
-- **`/metrics`** — Prometheus text exposition. Reads from `latest_snapshot` for gauges and from `HttpApp.poller` for counters.
+- **`/metrics`** — Prometheus text exposition. Reads from `latest_snapshot` for gauges and from `settings.poller` for counters.
 - **`/miners`** — list of configured miners with availability inferred from the most recent snapshot.
 - **`/miners/:miner/{summary,devices,pools,stats}`** — latest snapshot per miner, per command.
 - **`/graph_data/{hashrate,temperature,availability}`** — time-range series queries.
@@ -205,8 +205,8 @@ All under `/v2/*`. See `interfaces.md` for the full contract.
 ### Queue-driven shutdown
 A shared `Queue` is the rendezvous point for "time to stop." Signal handlers push to it; Puma's crash handler pushes to it; the main thread blocks on it. This replaces the more common but more error-prone pattern of `Thread.current.raise` or `Thread#kill`.
 
-### Class-level state on HttpApp (deliberate, constrained)
-`HttpApp.poller`, `HttpApp.started_at`, `HttpApp.configured_miners_cache` are set by `Server` at boot, read by Sinatra routes. This is less clean than dependency injection but sidesteps the awkwardness of passing per-request context into Sinatra's class-level `get '...' do ... end` blocks. The trade-off: tests must reset that state between examples (see `spec/support/` and `HttpApp.reset_configured_miners!`).
+### App state in Sinatra settings
+`settings.poller`, `settings.started_at`, `settings.configured_miners` are written by `Server#run` before Puma accepts its first request, read by Sinatra routes. Settings are the idiomatic Sinatra mechanism for per-app configuration: they live on the class (same singleton semantics as the class-level accessors they replaced) but give us one consistent `set :foo, value` shape for writes and `settings.foo` for reads. Specs populate them in one call via `HttpApp.configure_for_test!(miners:, poller:, started_at:)`.
 
 ### "extract_samples" as a leaf function
 `Poller#extract_samples` is the one place that knows about cgminer's response shape (envelope → command-key → array of hash rows → numeric fields). Adding a new extracted metric or a new command means editing that one method. See the AGENTS.md extension notes.

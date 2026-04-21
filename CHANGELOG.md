@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`HttpApp` class-level state moved to Sinatra `settings`.** `poller`,
+  `started_at`, and `configured_miners` are now declared via `set :key,
+  nil` on the class and written via `HttpApp.set :key, value` in
+  `Server#run`. Routes read via `settings.foo` instead of
+  `self.class.foo`. `configured_miners` is now eager-loaded by
+  `Server#run` (via `HttpApp.parse_miners_file`) rather than lazily on
+  first request.
+  - New class method `HttpApp.configure_for_test!(miners:, poller:,
+    started_at:)` bundles the three settings writes that tests used to
+    do one-by-one.
+  - Removed: `HttpApp.poller=` / `HttpApp.started_at=` / the
+    `HttpApp.configured_miners_cache` memo / `HttpApp.reset_configured_miners!`
+    helper. Specs that called any of these should switch to
+    `configure_for_test!`.
+
 ### Added
 - AI-assistant knowledge base under `docs/` (architecture, components,
   interfaces, data models, workflows, dependencies, review notes,
