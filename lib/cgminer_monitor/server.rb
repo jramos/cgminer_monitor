@@ -9,9 +9,10 @@ module CgminerMonitor
     attr_reader :config, :poller
 
     def initialize(config)
-      @config = config
-      @poller = Poller.new(config)
-      @stop   = Queue.new
+      @config  = config
+      @poller  = Poller.new(config)
+      @signals = Queue.new
+      @booted  = Queue.new
     end
 
     def run
@@ -31,19 +32,25 @@ module CgminerMonitor
       Logger.info(event: 'server.start', pid: Process.pid,
                   config: @config.public_attrs)
 
-      poller_thread = Thread.new { @poller.run_until_stopped(@stop) }
+      poller_thread = Thread.new { @poller.run_until_stopped(@signals) }
       puma_launcher = build_puma_launcher
-      puma_thread = Thread.new do
-        puma_launcher.run
-      rescue Exception => e # rubocop:disable Lint/RescueException
-        Logger.error(event: 'puma.crash', error: e.class.to_s,
-                     message: e.message, backtrace: e.backtrace&.first(10))
-        @stop << 'puma_crash'
-      end
-      reinstall_signal_handlers # Re-install after Puma's setup_signals runs
+      puma_thread   = start_puma_thread(puma_launcher)
 
-      signal = @stop.pop # blocks until SIGTERM/SIGINT
-      Logger.info(event: 'server.stopping', signal: signal)
+      # Wait for Puma's launcher.events.on_booted before reinstalling
+      # our traps. Puma's setup_signals runs synchronously during
+      # launcher.run and overwrites our handlers — including
+      # installing its own SIGHUP trap (which calls stop() when
+      # stdout_redirect is unset), which would shut us down instead of
+      # triggering a reload. on_booted is deterministic; the previous
+      # sleep(0.05) was racy.
+      @booted.pop
+      install_signal_handlers
+
+      write_pid_file
+
+      dispatch_signals_until_stop
+
+      Logger.info(event: 'server.stopping')
 
       @poller.stop
       poller_thread.join(@config.shutdown_timeout)
@@ -56,6 +63,8 @@ module CgminerMonitor
       Logger.error(event: 'server.crash', error: e.class.to_s,
                    message: e.message, backtrace: e.backtrace)
       1
+    ensure
+      unlink_pid_file
     end
 
     # --- Startup ---
@@ -96,15 +105,68 @@ module CgminerMonitor
 
     private
 
-    def install_signal_handlers
-      %w[TERM INT].each do |sig|
-        Signal.trap(sig) { @stop << sig }
+    def start_puma_thread(launcher)
+      Thread.new do
+        launcher.run
+      rescue Exception => e # rubocop:disable Lint/RescueException
+        Logger.error(event: 'puma.crash', error: e.class.to_s,
+                     message: e.message, backtrace: e.backtrace&.first(10))
+        @booted << true # unblock main if we died before booting
+        @signals << :stop
       end
+    end
+
+    def install_signal_handlers
+      Signal.trap('INT')  { @signals << :stop }
+      Signal.trap('TERM') { @signals << :stop }
+      Signal.trap('HUP')  { @signals << :reload }
+    end
+
+    def dispatch_signals_until_stop
+      loop do
+        case @signals.pop
+        when :reload then perform_reload
+        when :stop   then break
+        end
+      end
+    end
+
+    # Two-step reload: Poller holds the live MinerPool the poll loop
+    # iterates; HttpApp holds the route-read miner list. Both must
+    # agree for a clean reload. If either fails we log reload.failed
+    # (inside the reload methods) and skip reload.ok so an operator
+    # sees the discrepancy in logs; the one-tick window where only one
+    # side has updated is cosmetic (we only get here if one side's
+    # parse raised but the other's succeeded, which requires an
+    # external TOCTOU file rewrite).
+    def perform_reload
+      Logger.info(event: 'reload.signal_received')
+      pool_count = @poller.reload!
+      app_count  = HttpApp.reload_miners!(@config.miners_file)
+      return unless pool_count && app_count
+
+      Logger.info(event: 'reload.ok', miners: pool_count)
+    end
+
+    def write_pid_file
+      return unless @config.pid_file
+
+      File.write(@config.pid_file, "#{Process.pid}\n")
+      Logger.info(event: 'server.pid_file_written', path: @config.pid_file)
+    end
+
+    def unlink_pid_file
+      return unless @config.pid_file
+
+      File.unlink(@config.pid_file)
+    rescue Errno::ENOENT
+      # already gone — shutdown raced with external cleanup; fine
     end
 
     def build_puma_launcher
       app = HttpApp
       config = @config
+      booted = @booted
 
       puma_config = Puma::Configuration.new do |user_config|
         user_config.bind "tcp://#{config.http_host}:#{config.http_port}"
@@ -114,21 +176,14 @@ module CgminerMonitor
         user_config.log_requests false
         user_config.quiet
         # Prevent Puma from installing its own SIGTERM handler, which would
-        # overwrite our @stop-queue-based handler. We handle shutdown ourselves
+        # overwrite our @signals-queue-based handler. We handle shutdown ourselves
         # via launcher.stop called from the main thread.
         user_config.raise_exception_on_sigterm false
       end
 
-      Puma::Launcher.new(puma_config)
-    end
-
-    def reinstall_signal_handlers
-      # Puma::Launcher#run calls setup_signals synchronously, which overwrites
-      # process-global signal handlers. We re-install ours after a brief yield
-      # to let Puma's thread start. Even with raise_exception_on_sigterm false,
-      # Puma may still install handlers for other signals.
-      sleep 0.05
-      install_signal_handlers
+      launcher = Puma::Launcher.new(puma_config)
+      launcher.events.on_booted { booted << true }
+      launcher
     end
   end
 end
