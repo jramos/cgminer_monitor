@@ -32,6 +32,23 @@ module CgminerMonitor
       end.freeze
     end
 
+    # Re-parses the given miners file and atomically swaps
+    # `settings.configured_miners`. Returns the new miner count on
+    # success, nil on parse/IO failure — the old setting is untouched
+    # on failure so in-flight readers never see a torn state. Caught
+    # failure modes: missing file, malformed YAML, and a top-level
+    # scalar (which makes `YAML.safe_load_file(path).map` raise
+    # NoMethodError because String lacks #map).
+    def self.reload_miners!(path)
+      new_miners = parse_miners_file(path)
+      set :configured_miners, new_miners
+      new_miners.size
+    rescue Errno::ENOENT, Psych::SyntaxError, NoMethodError => e
+      Logger.warn(event: 'reload.failed',
+                  error: e.class.to_s, message: e.message)
+      nil
+    end
+
     # Sentinel so the default "give me a current timestamp" behavior for
     # `started_at:` stays available without making nil-as-explicit-clear
     # impossible to express.
