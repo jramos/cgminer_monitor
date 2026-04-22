@@ -101,6 +101,13 @@ when 'reload'
   rescue Errno::ESRCH
     warn "stale pid file (pid not running): #{pid_path}"
     exit 1
+  rescue Errno::EPERM
+    warn "pid #{pid} exists but is not owned by us " \
+         "(stale pid file from a different user? #{pid_path})"
+    exit 1
+  rescue ArgumentError
+    warn "pid file is not an integer: #{pid_path}"
+    exit 1
   end
 
 when 'doctor'
@@ -143,6 +150,8 @@ when 'doctor'
       puts "  INVALID: contents not an integer: #{pid_path}"
     rescue Errno::ESRCH
       puts "  STALE: pid #{recorded_pid} in #{pid_path} is not running"
+    rescue Errno::EPERM
+      puts "  UNOWNED: pid #{recorded_pid} in #{pid_path} exists but is not owned by us"
     end
   end
 
