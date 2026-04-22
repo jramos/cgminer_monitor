@@ -158,6 +158,7 @@ RSpec.describe 'CLI integration', :integration do
                   out: log_w, err: log_w)
       log_w.close
 
+      captured = +''
       begin
         wait_for_bind!('127.0.0.1', port)
 
@@ -169,14 +170,28 @@ RSpec.describe 'CLI integration', :integration do
                    "- host: 127.0.0.1\n  port: 4028\n" \
                    "- host: 127.0.0.1\n  port: 4029\n")
         Process.kill('HUP', pid)
-        sleep 0.5 # let the dispatcher process the signal
+
+        # Poll the log pipe for reload.ok with a deadline instead of
+        # sleep(0.5). The stdout fd is non-blocking-read via select;
+        # this eliminates the "under CI load the dispatcher hasn't
+        # processed the signal yet" flake and races.
+        deadline = Time.now + 5
+        until Time.now > deadline
+          captured << log_r.read_nonblock(65_536) if log_r.wait_readable(0.1)
+          break if captured.include?('reload.ok')
+        end
+        expect(captured).to include('reload.signal_received')
+        expect(captured).to include('reload.ok')
       ensure
         Process.kill('TERM', pid) rescue nil # rubocop:disable Style/RescueModifier
         Process.wait(pid)
-        logged = log_r.read
+        # Drain any trailing output the server emitted during shutdown.
+        begin
+          captured << log_r.read
+        rescue IOError
+          # pipe already closed — fine
+        end
         log_r.close
-        expect(logged).to match(/reload\.signal_received/)
-        expect(logged).to match(/reload\.ok/)
         FileUtils.rm_rf(dir)
       end
     end
