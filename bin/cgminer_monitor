@@ -63,6 +63,46 @@ when 'migrate'
     exit 1
   end
 
+when 'reload'
+  begin
+    config = CgminerMonitor::Config.from_env
+    CgminerMonitor::Logger.format = config.log_format
+    CgminerMonitor::Logger.level  = config.log_level
+
+    pid_path = config.pid_file
+    if pid_path.nil? || pid_path.empty?
+      warn 'CGMINER_MONITOR_PID_FILE not set; cannot locate running server'
+      exit 78
+    end
+
+    # Dry-run parse so YAML typos surface at the operator's terminal
+    # (exit 78 via ConfigError rescue below) instead of landing in the
+    # server's logs. Raises Psych::SyntaxError on malformed YAML;
+    # translate to ConfigError so the rescue keeps a uniform shape.
+    begin
+      CgminerMonitor::HttpApp.parse_miners_file(config.miners_file)
+    rescue Psych::SyntaxError => e
+      raise CgminerMonitor::ConfigError, "miners_file is not valid YAML: #{e.message}"
+    end
+
+    unless File.exist?(pid_path)
+      warn "pid file not found: #{pid_path} " \
+           "(server may still be starting — pid file is written after Puma boots)"
+      exit 1
+    end
+
+    pid = Integer(File.read(pid_path).strip)
+    Process.kill(0, pid)
+    Process.kill('HUP', pid)
+    puts "SIGHUP sent to pid #{pid}; check server logs for reload.ok"
+  rescue CgminerMonitor::ConfigError => e
+    warn "Configuration error: #{e.message}"
+    exit 78
+  rescue Errno::ESRCH
+    warn "stale pid file (pid not running): #{pid_path}"
+    exit 1
+  end
+
 when 'doctor'
   config = CgminerMonitor::Config.from_env
   puts "cgminer_monitor #{CgminerMonitor::VERSION}"
@@ -83,6 +123,27 @@ when 'doctor'
     puts 'OK'
   rescue StandardError => e
     puts "FAILED: #{e.class}: #{e.message}"
+  end
+
+  # Check PID file posture — audit-honest report so an operator knows
+  # whether `cgminer_monitor reload` will work.
+  puts ''
+  puts 'PID file:'
+  pid_path = config.pid_file
+  if pid_path.nil? || pid_path.empty?
+    puts '  not configured (reload verb unavailable; use kill -HUP <pid> directly)'
+  elsif !File.exist?(pid_path)
+    puts "  MISSING: configured but absent: #{pid_path}"
+  else
+    begin
+      recorded_pid = Integer(File.read(pid_path).strip)
+      Process.kill(0, recorded_pid)
+      puts "  OK: #{pid_path} (pid #{recorded_pid})"
+    rescue ArgumentError
+      puts "  INVALID: contents not an integer: #{pid_path}"
+    rescue Errno::ESRCH
+      puts "  STALE: pid #{recorded_pid} in #{pid_path} is not running"
+    end
   end
 
   # Check miners
@@ -126,6 +187,7 @@ when nil
   warn "  run       Run the monitoring service in the foreground"
   warn "  migrate   Create MongoDB collections and indexes (idempotent)"
   warn "  doctor    Validate config, test Mongo + miner connectivity"
+  warn "  reload    Dry-run-parse miners.yml, then SIGHUP the running server"
   warn "  version   Print version and exit"
   exit 64
 
