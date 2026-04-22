@@ -47,4 +47,18 @@ RSpec.describe CgminerMonitor::HttpApp, '.reload_miners!' do # rubocop:disable R
     expect(described_class.reload_miners!(path)).to be_nil
     expect(described_class.settings.configured_miners).to equal(old)
   end
+
+  it 'keeps old miners when a list entry is a scalar (not a Hash)' do
+    old = described_class.settings.configured_miners
+    File.write(path, "- just-a-string\n")
+    expect(described_class.reload_miners!(path)).to be_nil
+    expect(described_class.settings.configured_miners).to equal(old)
+  end
+
+  it 'keeps old miners when a list entry is missing host' do
+    old = described_class.settings.configured_miners
+    File.write(path, "- port: 4028\n")
+    expect(described_class.reload_miners!(path)).to be_nil
+    expect(described_class.settings.configured_miners).to equal(old)
+  end
 end

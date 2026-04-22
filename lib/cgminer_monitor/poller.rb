@@ -76,12 +76,15 @@ module CgminerMonitor
     # captured the old pool as a local and would see a torn read if we
     # mutated. MRI's GVL makes the `@miner_pool =` assignment atomic.
     # Returns the new miner count on success, nil on parse/IO failure
-    # (old pool is untouched on failure).
+    # (old pool is untouched on failure). The rescue list covers only
+    # named validation/IO failures from build_miner_pool — a bug like
+    # a method rename surfaces as an uncaught NoMethodError, which is
+    # what we want; don't broaden the rescue.
     def reload!(miners_file = @config.miners_file)
       new_pool = build_miner_pool(miners_file)
       @miner_pool = new_pool
       new_pool.miners.size
-    rescue CgminerMonitor::ConfigError, Errno::ENOENT, Psych::SyntaxError, NoMethodError => e
+    rescue CgminerMonitor::ConfigError, Errno::ENOENT, Psych::SyntaxError => e
       Logger.warn(event: 'reload.failed',
                   error: e.class.to_s, message: e.message)
       nil
@@ -209,6 +212,11 @@ module CgminerMonitor
       # to CWD via load_miners!. We bypass initialize with allocate and set
       # miners directly from the configurable miners_file path.
       miners_config = YAML.safe_load_file(miners_file)
+      unless miners_config.is_a?(Array) && miners_config.all? { |m| m.is_a?(Hash) && m['host'] }
+        raise CgminerMonitor::ConfigError,
+              "#{miners_file} must be a YAML list of {host, port} entries"
+      end
+
       pool          = CgminerApiClient::MinerPool.allocate
       pool.miners   = miners_config.collect do |miner|
         CgminerApiClient::Miner.new(miner['host'], miner['port'], miner['timeout'])
