@@ -55,14 +55,14 @@ RSpec.describe CgminerMonitor::Server do
       allow(server).to receive(:bootstrap_mongoid!)
       allow(server).to receive(:validate_startup!)
       allow(server).to receive(:install_signal_handlers)
-      allow(server).to receive(:reinstall_signal_handlers)
       # Prevent the poller + puma threads from actually starting.
       allow(server.poller).to receive(:run_until_stopped)
       allow(server.poller).to receive(:stop)
       fake_launcher = instance_double(Puma::Launcher, run: nil, stop: nil)
       allow(server).to receive(:build_puma_launcher).and_return(fake_launcher)
-      # Push a signal immediately so #run doesn't block.
-      server.instance_variable_get(:@stop).push('TEST')
+      # Push sentinels so #run doesn't block on @booted.pop or the signal dispatcher.
+      server.instance_variable_get(:@booted).push(true)
+      server.instance_variable_get(:@signals).push(:stop)
     end
 
     after do
@@ -79,8 +79,7 @@ RSpec.describe CgminerMonitor::Server do
   end
 
   describe 'signal handling' do
-    it 'installs TERM and INT signal handlers' do
-      # Capture the signals that get trapped
+    it 'installs TERM, INT, and HUP signal handlers' do
       trapped = []
       allow(Signal).to receive(:trap) do |sig, &_block|
         trapped << sig
@@ -88,7 +87,7 @@ RSpec.describe CgminerMonitor::Server do
 
       server.send(:install_signal_handlers)
 
-      expect(trapped).to contain_exactly('TERM', 'INT')
+      expect(trapped).to contain_exactly('TERM', 'INT', 'HUP')
     end
   end
 
@@ -121,15 +120,10 @@ RSpec.describe CgminerMonitor::Server do
   end
 
   describe 'graceful shutdown' do
-    it 'stops the poller and puma when signaled' do
-      stop_queue = server.instance_variable_get(:@stop)
-
-      # Simulate signal delivery
-      stop_queue << 'TERM'
-
-      # Verify the queue has the signal
-      signal = stop_queue.pop
-      expect(signal).to eq 'TERM'
+    it 'uses the @signals queue to deliver shutdown sentinels' do
+      signals = server.instance_variable_get(:@signals)
+      signals << :stop
+      expect(signals.pop).to eq(:stop)
     end
   end
 

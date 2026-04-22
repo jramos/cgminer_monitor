@@ -54,6 +54,7 @@ All configuration is via environment variables. No config files are needed excep
 | `CGMINER_MONITOR_SHUTDOWN_TIMEOUT` | `10` | Graceful shutdown timeout in seconds |
 | `CGMINER_MONITOR_HEALTHZ_STALE_MULTIPLIER` | `2` | Multiplier on interval for stale-poll detection |
 | `CGMINER_MONITOR_HEALTHZ_STARTUP_GRACE` | `60` | Seconds to allow before first poll is expected |
+| `CGMINER_MONITOR_PID_FILE` | unset | Path where `run` writes the server PID on boot and unlinks on shutdown. Required for `cgminer_monitor reload`; operators can also `kill -HUP <pid>` directly. |
 
 ### Miners file
 
@@ -86,6 +87,17 @@ cgminer_monitor run
 ```
 
 The service runs in the foreground. Use your process supervisor (systemd, launchd, etc.) for production.
+
+### Hot-reloading miners.yml
+
+`miners.yml` is hot-reloadable — edit the file, then either
+`kill -HUP $(cat $CGMINER_MONITOR_PID_FILE)` or
+`cgminer_monitor reload`. The service logs `event=reload.ok` on
+success or `event=reload.failed` (and keeps the old list) if the new
+file fails to parse. Both the poll loop and the HTTP routes pick up
+the new list atomically. Only `miners.yml` reloads; changes to
+`CGMINER_MONITOR_MONGO_URL`, `CGMINER_MONITOR_INTERVAL`, log level,
+etc. still require a restart.
 
 ### Running with Docker
 

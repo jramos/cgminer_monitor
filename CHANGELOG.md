@@ -7,7 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`miners.yml` hot reload via SIGHUP.** Add or remove a miner without
+  restarting the service. The Server traps SIGHUP, atomically rebuilds
+  the Poller's `MinerPool` and swaps `HttpApp.settings.configured_miners`
+  — the next poll tick and every subsequent HTTP request see the new
+  list. Parse or validation failures log `event=reload.failed` and
+  keep the previous list so a typo can't crash a running server. New
+  CLI verb `cgminer_monitor reload` reads `CGMINER_MONITOR_PID_FILE`,
+  dry-run-parses miners.yml locally (surfacing typos at exit 78 before
+  signaling), and sends SIGHUP; `doctor` reports the PID file's
+  posture (`not configured` / `OK (pid N)` / `STALE` / `MISSING`).
+
 ### Changed
+- **Server signal dispatcher uses `launcher.events.on_booted` instead
+  of `sleep(0.05)`.** Puma's `setup_signals` unconditionally installs
+  its own SIGHUP handler that calls `stop()` when `stdout_redirect` is
+  unset; the old sleep-based wait could race and leave Puma's HUP
+  handler active, eating reload signals. `on_booted` is deterministic.
+  Shutdown (SIGTERM/SIGINT) behavior unchanged.
 - **`HttpApp` class-level state moved to Sinatra `settings`.** `poller`,
   `started_at`, and `configured_miners` are now declared via `set :key,
   nil` on the class and written via `HttpApp.set :key, value` in
