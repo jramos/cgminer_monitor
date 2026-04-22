@@ -113,4 +113,72 @@ RSpec.describe 'CLI integration', :integration do
       expect(status.exitstatus).not_to eq 0
     end
   end
+
+  # SIGHUP path: spawn a real cgminer_monitor, rewrite miners.yml,
+  # send SIGHUP, and assert reload.signal_received + reload.ok appear in
+  # captured stdout. The log-match is the regression guard against a
+  # future change that silently swallows SIGHUP — e.g., Puma reinstalling
+  # its own HUP trap (which calls stop()) between our install and the
+  # process boundary. Relies on Mongo at localhost:27017; skipped when
+  # Mongo isn't reachable.
+  describe 'reload via SIGHUP', :integration do
+    def wait_for_bind!(host, port, timeout: 15)
+      deadline = Time.now + timeout
+      until Time.now >= deadline
+        begin
+          TCPSocket.new(host, port).close
+          return
+        rescue Errno::ECONNREFUSED, Errno::EINVAL
+          Thread.pass
+        end
+      end
+      raise 'server did not bind within deadline'
+    end
+
+    it 'reloads miners on SIGHUP' do
+      dir = Dir.mktmpdir
+      sighup_miners = File.join(dir, 'miners.yml')
+      pid_path      = File.join(dir, 'cm-monitor.pid')
+      File.write(sighup_miners, "- host: 127.0.0.1\n  port: 4028\n")
+
+      port = 9293 # fixed port; avoids TIME_WAIT races from ephemeral port reuse
+
+      spawn_env = {
+        'CGMINER_MONITOR_MINERS_FILE' => sighup_miners,
+        'CGMINER_MONITOR_MONGO_URL' => env['CGMINER_MONITOR_MONGO_URL'],
+        'CGMINER_MONITOR_HTTP_PORT' => port.to_s,
+        'CGMINER_MONITOR_HTTP_HOST' => '127.0.0.1',
+        'CGMINER_MONITOR_SHUTDOWN_TIMEOUT' => '3',
+        'CGMINER_MONITOR_PID_FILE' => pid_path,
+        'CGMINER_MONITOR_LOG_FORMAT' => 'json'
+      }
+
+      log_r, log_w = IO.pipe
+      pid = spawn(spawn_env, 'bundle', 'exec', bin_path, 'run',
+                  out: log_w, err: log_w)
+      log_w.close
+
+      begin
+        wait_for_bind!('127.0.0.1', port)
+
+        deadline = Time.now + 5
+        sleep 0.05 until File.exist?(pid_path) || Time.now > deadline
+        expect(File.read(pid_path).strip).to eq(pid.to_s)
+
+        File.write(sighup_miners,
+                   "- host: 127.0.0.1\n  port: 4028\n" \
+                   "- host: 127.0.0.1\n  port: 4029\n")
+        Process.kill('HUP', pid)
+        sleep 0.5 # let the dispatcher process the signal
+      ensure
+        Process.kill('TERM', pid) rescue nil # rubocop:disable Style/RescueModifier
+        Process.wait(pid)
+        logged = log_r.read
+        log_r.close
+        expect(logged).to match(/reload\.signal_received/)
+        expect(logged).to match(/reload\.ok/)
+        FileUtils.rm_rf(dir)
+      end
+    end
+  end
 end
