@@ -11,7 +11,8 @@ module CgminerMonitor
     :cors_origins,
     :shutdown_timeout,
     :healthz_stale_multiplier,
-    :healthz_startup_grace_seconds
+    :healthz_startup_grace_seconds,
+    :pid_file
   ) do
     def validate!
       raise ConfigError, "interval must be > 0" unless interval.positive?
@@ -50,7 +51,8 @@ module CgminerMonitor
         cors_origins: env.fetch("CGMINER_MONITOR_CORS_ORIGINS", "*"),
         shutdown_timeout: parse_int(env, "CGMINER_MONITOR_SHUTDOWN_TIMEOUT", "10"),
         healthz_stale_multiplier: parse_int(env, "CGMINER_MONITOR_HEALTHZ_STALE_MULTIPLIER", "2"),
-        healthz_startup_grace_seconds: parse_int(env, "CGMINER_MONITOR_HEALTHZ_STARTUP_GRACE", "60")
+        healthz_startup_grace_seconds: parse_int(env, "CGMINER_MONITOR_HEALTHZ_STARTUP_GRACE", "60"),
+        pid_file: env["CGMINER_MONITOR_PID_FILE"]
       ).validate!
     end
 

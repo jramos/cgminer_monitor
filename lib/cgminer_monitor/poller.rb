@@ -19,12 +19,17 @@ module CgminerMonitor
     end
 
     def poll_once
+      # Capture @miner_pool once so a mid-poll reload! (which atomically
+      # swaps the ivar) can't mix miner_ids from the old list with query
+      # results from the new pool. Threading `pool` through poll_miner /
+      # query_command keeps the whole tick consistent.
+      pool         = @miner_pool
       now          = Time.now.utc
       all_samples  = []
       snapshot_ops = []
 
-      @miner_pool.miners.each do |miner|
-        poll_miner(miner, now, all_samples, snapshot_ops)
+      pool.miners.each do |miner|
+        poll_miner(pool, miner, now, all_samples, snapshot_ops)
       end
 
       write_samples(all_samples) unless all_samples.empty?
@@ -65,15 +70,35 @@ module CgminerMonitor
       @stopped
     end
 
+    # Rebuilds @miner_pool from `miners_file` by constructing a *new*
+    # MinerPool and swapping the ivar. Never mutates an existing pool's
+    # miners array in place — any in-flight poll_once has already
+    # captured the old pool as a local and would see a torn read if we
+    # mutated. MRI's GVL makes the `@miner_pool =` assignment atomic.
+    # Returns the new miner count on success, nil on parse/IO failure
+    # (old pool is untouched on failure). The rescue list covers only
+    # named validation/IO failures from build_miner_pool — a bug like
+    # a method rename surfaces as an uncaught NoMethodError, which is
+    # what we want; don't broaden the rescue.
+    def reload!(miners_file = @config.miners_file)
+      new_pool = build_miner_pool(miners_file)
+      @miner_pool = new_pool
+      new_pool.miners.size
+    rescue CgminerMonitor::ConfigError, Errno::ENOENT, Psych::SyntaxError => e
+      Logger.warn(event: 'reload.failed',
+                  error: e.class.to_s, message: e.message)
+      nil
+    end
+
     private
 
-    def poll_miner(miner, now, all_samples, snapshot_ops)
+    def poll_miner(pool, miner, now, all_samples, snapshot_ops)
       miner_id   = "#{miner.host}:#{miner.port}"
       started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       miner_ok   = true
 
       COMMANDS.each do |command|
-        pool_result  = query_command(command)
+        pool_result  = pool.query(command)
         miner_result = pool_result[miner_id]
 
         if miner_result&.ok?
@@ -118,10 +143,6 @@ module CgminerMonitor
     def append_synthetic_samples(miner_id, miner_ok, elapsed_ms, now, all_samples)
       all_samples << sample_hash(miner_id, 'poll', 0, 'ok', miner_ok ? 1.0 : 0.0, now)
       all_samples << sample_hash(miner_id, 'poll', 0, 'duration_ms', elapsed_ms, now)
-    end
-
-    def query_command(command)
-      @miner_pool.query(command)
     end
 
     def extract_samples(miner_id, command, response, ts)
@@ -191,6 +212,11 @@ module CgminerMonitor
       # to CWD via load_miners!. We bypass initialize with allocate and set
       # miners directly from the configurable miners_file path.
       miners_config = YAML.safe_load_file(miners_file)
+      unless miners_config.is_a?(Array) && miners_config.all? { |m| m.is_a?(Hash) && m['host'] }
+        raise CgminerMonitor::ConfigError,
+              "#{miners_file} must be a YAML list of {host, port} entries"
+      end
+
       pool          = CgminerApiClient::MinerPool.allocate
       pool.miners   = miners_config.collect do |miner|
         CgminerApiClient::Miner.new(miner['host'], miner['port'], miner['timeout'])

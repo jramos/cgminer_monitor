@@ -7,7 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-04-22
+
 ### Added
+- **`miners.yml` hot reload via SIGHUP.** Add or remove a miner without
+  restarting the service. The Server traps SIGHUP, atomically rebuilds
+  the Poller's `MinerPool` and swaps `HttpApp.settings.configured_miners`
+  — the next poll tick and every subsequent HTTP request see the new
+  list. `Poller#reload!` builds a new `MinerPool` and swaps the ivar
+  (the old pool is never mutated in place, so an in-flight `poll_once`
+  that captured it as a local finishes consistently). Parse or
+  validation failures log `event=reload.failed` and keep the previous
+  list so a typo can't crash a running server. When `Poller` and
+  `HttpApp` reloads disagree (one succeeded, the other didn't), the
+  dispatcher logs `event=reload.partial` at error level so operators
+  see the inconsistent state instead of inferring it. New CLI verb
+  `cgminer_monitor reload` reads `CGMINER_MONITOR_PID_FILE`,
+  dry-run-parses miners.yml locally (surfacing typos at exit 78 before
+  signaling), and sends SIGHUP; `doctor` reports the PID file's
+  posture (`not configured` / `OK (pid N)` / `STALE` / `UNOWNED` /
+  `INVALID` / `MISSING`). Reload-verb failure modes now exit 1 with
+  a clean message instead of a stack trace for
+  `ArgumentError` (garbage pid-file contents) and `Errno::EPERM`
+  (pid belongs to another user). `parse_miners_file` and
+  `build_miner_pool` now validate the top-level YAML shape up-front
+  and raise `ConfigError` with a specific message, replacing the
+  fragile `rescue NoMethodError` that previously hid method-rename
+  bugs.
 - **CI publishes multi-arch container images on `v*` tag push.** New
   `.github/workflows/release.yml` builds `linux/amd64` + `linux/arm64`
   images on native GitHub-hosted runners and pushes to
@@ -15,9 +41,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`1.2.3` / `1.2` / `1` / `latest`, prerelease-safe) plus SLSA
   provenance and CycloneDX SBOM attestations. A `workflow_dispatch`
   entry point runs ad-hoc builds with a user-supplied tag
-  (default `edge`) for smoke tests.
+  (default `edge`) for smoke tests. (First release under this workflow
+  was the v0.1.0 tag on 2026-04-21, which published before this
+  CHANGELOG caught up; rolled into 1.1.0 here for clarity.)
 
 ### Changed
+- **Server signal dispatcher uses `launcher.events.on_booted` instead
+  of `sleep(0.05)`.** Puma's `setup_signals` unconditionally installs
+  its own SIGHUP handler that calls `stop()` when `stdout_redirect` is
+  unset; the old sleep-based wait could race and leave Puma's HUP
+  handler active, eating reload signals. `on_booted` is deterministic.
+  Shutdown (SIGTERM/SIGINT) behavior unchanged.
 - **`HttpApp` class-level state moved to Sinatra `settings`.** `poller`,
   `started_at`, and `configured_miners` are now declared via `set :key,
   nil` on the class and written via `HttpApp.set :key, value` in

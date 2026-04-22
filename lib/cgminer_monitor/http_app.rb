@@ -23,13 +23,40 @@ module CgminerMonitor
 
     # Wraps the raw YAML parse behind a stable shape so Server#run (and
     # the test helper below) can eager-populate `settings.configured_miners`.
-    # Returns a frozen Array of `[miner_id, host, port]` tuples.
+    # Returns a frozen Array of `[miner_id, host, port]` tuples. Raises
+    # ConfigError on shape errors (non-Array top level, list entry not
+    # a Hash, or Hash missing `host`) so callers don't have to rescue
+    # NoMethodError/TypeError just to distinguish "malformed miners
+    # file" from "bug in our code."
     def self.parse_miners_file(path)
-      YAML.safe_load_file(path).map do |m|
+      raw = YAML.safe_load_file(path)
+      validate_miners_shape!(path, raw)
+      raw.map do |m|
         host = m['host']
         port = m['port'] || 4028
         ["#{host}:#{port}", host, port]
       end.freeze
+    end
+
+    def self.validate_miners_shape!(path, raw)
+      return if raw.is_a?(Array) && raw.all? { |m| m.is_a?(Hash) && m['host'] }
+
+      raise ConfigError, "#{path} must be a YAML list of {host, port} entries"
+    end
+    private_class_method :validate_miners_shape!
+
+    # Re-parses the given miners file and atomically swaps
+    # `settings.configured_miners`. Returns the new miner count on
+    # success, nil on parse/validation/IO failure — the old setting is
+    # untouched on failure so in-flight readers never see a torn state.
+    def self.reload_miners!(path)
+      new_miners = parse_miners_file(path)
+      set :configured_miners, new_miners
+      new_miners.size
+    rescue ConfigError, Errno::ENOENT, Psych::SyntaxError => e
+      Logger.warn(event: 'reload.failed',
+                  error: e.class.to_s, message: e.message)
+      nil
     end
 
     # Sentinel so the default "give me a current timestamp" behavior for

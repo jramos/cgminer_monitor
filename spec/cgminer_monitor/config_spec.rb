@@ -58,6 +58,18 @@ RSpec.describe CgminerMonitor::Config do
       expect(config.healthz_startup_grace_seconds).to eq 90
     end
 
+    it 'reads CGMINER_MONITOR_PID_FILE when set' do
+      config = described_class.from_env(valid_env.merge(
+                                          'CGMINER_MONITOR_PID_FILE' => '/tmp/cm-monitor.pid'
+                                        ))
+      expect(config.pid_file).to eq('/tmp/cm-monitor.pid')
+    end
+
+    it 'leaves pid_file nil when CGMINER_MONITOR_PID_FILE unset' do
+      config = described_class.from_env(valid_env)
+      expect(config.pid_file).to be_nil
+    end
+
     it 'uses sensible defaults when env vars are not set' do
       config = described_class.from_env({ 'CGMINER_MONITOR_MINERS_FILE' => miners_file })
 
