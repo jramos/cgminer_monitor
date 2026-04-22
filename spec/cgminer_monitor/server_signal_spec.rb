@@ -74,6 +74,56 @@ RSpec.describe CgminerMonitor::Server do
 
       expect(CgminerMonitor::Logger).not_to have_received(:info).with(hash_including(event: 'reload.ok'))
     end
+
+    it 'logs reload.partial when poller succeeds but HttpApp fails' do
+      poller = instance_double(CgminerMonitor::Poller, reload!: 3)
+      config = instance_double(CgminerMonitor::Config, miners_file: '/tmp/m.yml')
+      server = described_class.allocate
+      server.instance_variable_set(:@poller, poller)
+      server.instance_variable_set(:@config, config)
+
+      allow(CgminerMonitor::HttpApp).to receive(:reload_miners!).and_return(nil)
+      allow(CgminerMonitor::Logger).to receive(:info)
+      allow(CgminerMonitor::Logger).to receive(:error)
+
+      server.send(:perform_reload)
+
+      expect(CgminerMonitor::Logger).to have_received(:error)
+        .with(event: 'reload.partial', poller_ok: true, http_app_ok: false)
+    end
+
+    it 'logs reload.partial when HttpApp succeeds but poller fails' do
+      poller = instance_double(CgminerMonitor::Poller, reload!: nil)
+      config = instance_double(CgminerMonitor::Config, miners_file: '/tmp/m.yml')
+      server = described_class.allocate
+      server.instance_variable_set(:@poller, poller)
+      server.instance_variable_set(:@config, config)
+
+      allow(CgminerMonitor::HttpApp).to receive(:reload_miners!).and_return(3)
+      allow(CgminerMonitor::Logger).to receive(:info)
+      allow(CgminerMonitor::Logger).to receive(:error)
+
+      server.send(:perform_reload)
+
+      expect(CgminerMonitor::Logger).to have_received(:error)
+        .with(event: 'reload.partial', poller_ok: false, http_app_ok: true)
+    end
+
+    it 'does not log reload.partial when both sides fail' do
+      poller = instance_double(CgminerMonitor::Poller, reload!: nil)
+      config = instance_double(CgminerMonitor::Config, miners_file: '/tmp/m.yml')
+      server = described_class.allocate
+      server.instance_variable_set(:@poller, poller)
+      server.instance_variable_set(:@config, config)
+
+      allow(CgminerMonitor::HttpApp).to receive(:reload_miners!).and_return(nil)
+      allow(CgminerMonitor::Logger).to receive(:info)
+      allow(CgminerMonitor::Logger).to receive(:error)
+
+      server.send(:perform_reload)
+
+      expect(CgminerMonitor::Logger).not_to have_received(:error).with(hash_including(event: 'reload.partial'))
+    end
   end
 
   describe '#write_pid_file / #unlink_pid_file' do

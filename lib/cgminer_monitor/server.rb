@@ -133,19 +133,25 @@ module CgminerMonitor
 
     # Two-step reload: Poller holds the live MinerPool the poll loop
     # iterates; HttpApp holds the route-read miner list. Both must
-    # agree for a clean reload. If either fails we log reload.failed
-    # (inside the reload methods) and skip reload.ok so an operator
-    # sees the discrepancy in logs; the one-tick window where only one
-    # side has updated is cosmetic (we only get here if one side's
-    # parse raised but the other's succeeded, which requires an
-    # external TOCTOU file rewrite).
+    # agree for a clean reload. Each side logs reload.failed on its
+    # own parse failure; this dispatcher adds:
+    #   - reload.ok when both succeeded
+    #   - reload.partial when exactly one succeeded (inconsistent state
+    #     until the next reload; operator needs to know which half won)
+    #   - nothing when both failed (both reload.failed log lines are
+    #     enough signal; a dispatcher-level event would just duplicate)
     def perform_reload
       Logger.info(event: 'reload.signal_received')
       pool_count = @poller.reload!
       app_count  = HttpApp.reload_miners!(@config.miners_file)
-      return unless pool_count && app_count
 
-      Logger.info(event: 'reload.ok', miners: pool_count)
+      if pool_count && app_count
+        Logger.info(event: 'reload.ok', miners: pool_count)
+      elsif pool_count || app_count
+        Logger.error(event: 'reload.partial',
+                     poller_ok: !pool_count.nil?,
+                     http_app_ok: !app_count.nil?)
+      end
     end
 
     def write_pid_file
