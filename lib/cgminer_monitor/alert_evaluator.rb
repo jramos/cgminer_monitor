@@ -14,7 +14,7 @@ module CgminerMonitor
 
     def initialize(config, webhook_client: nil)
       @config         = config
-      @webhook_client = webhook_client
+      @webhook_client = webhook_client || default_webhook_client(config)
     end
 
     def evaluate(now)
@@ -163,6 +163,12 @@ module CgminerMonitor
       end
 
       readings
+    end
+
+    def default_webhook_client(config)
+      return nil unless config.alerts_enabled
+
+      WebhookClient.new(config)
     end
 
     def extract_hashrate(snapshot)
