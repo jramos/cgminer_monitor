@@ -29,8 +29,13 @@ module CgminerMonitor
       HttpApp.set :started_at,         Time.now.utc
       HttpApp.set :configured_miners,  HttpApp.parse_miners_file(@config.miners_file)
 
-      Logger.info(event: 'server.start', pid: Process.pid,
-                  config: @config.public_attrs)
+      Logger.info(event: 'server.start',
+                  pid: Process.pid,
+                  bind: @config.http_host,
+                  port: @config.http_port,
+                  log_format: @config.log_format,
+                  log_level: @config.log_level,
+                  mongo_url: @config.public_attrs[:mongo_url])
 
       poller_thread = Thread.new { @poller.run_until_stopped(@signals) }
       puma_launcher = build_puma_launcher

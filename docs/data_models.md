@@ -142,7 +142,7 @@ classDiagram
 - `log_level ∈ {"debug", "info", "warn", "error"}`
 - `File.exist?(miners_file)`
 
-**`public_attrs`** returns `to_h` with `mongo_url` redacted (`mongodb://user:pass@host` → `mongodb://[REDACTED]@host`). Used by the log startup line and by `cgminer_monitor doctor`.
+**`public_attrs`** returns `to_h` with `mongo_url` redacted (`mongodb://user:pass@host` → `mongodb://[REDACTED]@host`). Used by `cgminer_monitor doctor`; also supplies the redacted `mongo_url` value emitted in the `server.start` structured-log entry.
 
 **Immutable by design.** Config cannot be mutated at runtime. A config change requires a restart. Justified because the process model is supervisor-driven and a restart is cheap.
 

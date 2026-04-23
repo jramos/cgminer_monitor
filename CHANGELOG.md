@@ -28,6 +28,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and a reverse-proxy + TLS nginx snippet. Posture itself is
   unchanged (monitor remains auth-free by design); only the
   documentation is clearer.
+- **`server.start` log entry** now emits flat scalar keys (`pid`,
+  `bind`, `port`, `log_format`, `log_level`, `mongo_url`) rather
+  than a nested `config:` hash. Matches `cgminer_manager`'s
+  `server.start` shape and the style of every other structured-log
+  emit site. Log consumers that queried `config.mongo_url` need to
+  query `mongo_url` directly; `config.*` nested access no longer
+  resolves. `mongo_url` remains credential-redacted.
+
+### Added
+- **`docs/log_schema.md`** — canonical structured-log schema for
+  the three sibling gems, covering reserved keys, standard-key
+  types, namespace reservations (which repo owns `poll.*`,
+  `admin.*`, `rate_limit.*`, etc.), a full per-event catalog with
+  required and optional keys, evolution rules, and grep recipes
+  for log consumers. `cgminer_manager` and `cgminer_api_client`
+  link here rather than duplicate the contract.
 
 ## [1.1.0] — 2026-04-22
 
