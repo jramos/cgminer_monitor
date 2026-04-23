@@ -8,14 +8,15 @@ module CgminerMonitor
 
     attr_reader :polls_ok, :polls_failed
 
-    def initialize(config, miner_pool: nil)
-      @config       = config
-      @miner_pool   = miner_pool || build_miner_pool(config.miners_file)
-      @stopped      = false
-      @mutex        = Mutex.new
-      @cv           = ConditionVariable.new
-      @polls_ok     = 0
-      @polls_failed = 0
+    def initialize(config, miner_pool: nil, alert_evaluator: nil)
+      @config          = config
+      @miner_pool      = miner_pool || build_miner_pool(config.miners_file)
+      @alert_evaluator = alert_evaluator || AlertEvaluator.new(config)
+      @stopped         = false
+      @mutex           = Mutex.new
+      @cv              = ConditionVariable.new
+      @polls_ok        = 0
+      @polls_failed    = 0
     end
 
     def poll_once
@@ -40,6 +41,12 @@ module CgminerMonitor
                   snapshots_upserted: snapshot_ops.size,
                   polls_ok: @polls_ok,
                   polls_failed: @polls_failed)
+
+      # Evaluator runs AFTER poll.complete so the completion timestamp
+      # stays clean for stall-detection (healthz_stale_multiplier cadence
+      # checks depend on it). Evaluator emits its own alert.evaluation_complete
+      # for end-to-end timing.
+      run_alert_evaluator(now)
     rescue Mongo::Error => e
       increment_failed
       Logger.error(event: 'mongo.write_failed', error: e.class.to_s, message: e.message)
@@ -91,6 +98,13 @@ module CgminerMonitor
     end
 
     private
+
+    def run_alert_evaluator(now)
+      @alert_evaluator.evaluate(now)
+    rescue StandardError => e
+      Logger.error(event: 'alert.evaluator_error', error: e.class.to_s,
+                   message: e.message, backtrace: e.backtrace&.first(10))
+    end
 
     def poll_miner(pool, miner, now, all_samples, snapshot_ops)
       miner_id   = "#{miner.host}:#{miner.port}"

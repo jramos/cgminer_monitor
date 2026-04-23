@@ -225,6 +225,28 @@ RSpec.describe CgminerMonitor::Poller do
       poller.poll_once
       expect(poller.polls_ok).to eq 2
     end
+
+    it 'invokes the alert evaluator once per poll with the tick timestamp' do
+      evaluator = instance_double(CgminerMonitor::AlertEvaluator, evaluate: nil)
+      custom_poller = described_class.new(config, miner_pool: miner_pool, alert_evaluator: evaluator)
+      custom_poller.poll_once
+      expect(evaluator).to have_received(:evaluate).with(kind_of(Time)).once
+    end
+
+    it 'swallows evaluator exceptions and logs alert.evaluator_error' do
+      broken = instance_double(CgminerMonitor::AlertEvaluator)
+      allow(broken).to receive(:evaluate).and_raise(StandardError, 'boom')
+      custom_poller = described_class.new(config, miner_pool: miner_pool, alert_evaluator: broken)
+
+      log = StringIO.new
+      CgminerMonitor::Logger.output = log
+      CgminerMonitor::Logger.level = 'error'
+
+      expect { custom_poller.poll_once }.not_to raise_error
+
+      events = log.string.lines.map { |l| JSON.parse(l) }.map { |l| l['event'] }
+      expect(events).to include('alert.evaluator_error')
+    end
   end
 
   describe 'failed miner poll' do

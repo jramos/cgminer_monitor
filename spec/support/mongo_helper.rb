@@ -57,12 +57,15 @@ RSpec.configure do |config|
     db = Mongoid.default_client.database
     db[:samples].drop
     db[:latest_snapshot].drop
+    db[:alert_states].drop
     CgminerMonitor::Sample.create_collection
     CgminerMonitor::Snapshot.create_indexes
+    CgminerMonitor::AlertState.create_indexes
   end
 
   config.after do
     CgminerMonitor::Sample.collection.delete_many({})
     CgminerMonitor::Snapshot.collection.delete_many({})
+    CgminerMonitor::AlertState.collection.delete_many({})
   end
 end
