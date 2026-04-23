@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: cgminer_monitor API
-  version: "2.0.0"
+  version: "2.1.0"
   description: |
     Periodically polls cgminer instances and exposes their state via HTTP.
   license:
@@ -82,6 +82,10 @@ paths:
       responses:
         "200":
           description: Device snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnapshotEnvelope"
         "404":
           description: Unknown miner
 
@@ -97,6 +101,10 @@ paths:
       responses:
         "200":
           description: Pool snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnapshotEnvelope"
         "404":
           description: Unknown miner
 
@@ -112,6 +120,10 @@ paths:
       responses:
         "200":
           description: Summary snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnapshotEnvelope"
         "404":
           description: Unknown miner
 
@@ -127,6 +139,10 @@ paths:
       responses:
         "200":
           description: Stats snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnapshotEnvelope"
         "404":
           description: Unknown miner
 
@@ -151,6 +167,10 @@ paths:
       responses:
         "200":
           description: Hashrate data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GraphDataEnvelope"
         "400":
           description: Invalid parameters
 
@@ -174,6 +194,10 @@ paths:
       responses:
         "200":
           description: Temperature data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GraphDataEnvelope"
         "400":
           description: Invalid parameters
 
@@ -197,6 +221,10 @@ paths:
       responses:
         "200":
           description: Availability data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GraphDataEnvelope"
         "400":
           description: Invalid parameters
 
@@ -215,3 +243,49 @@ paths:
       responses:
         "200":
           description: HTML documentation page
+
+components:
+  schemas:
+    SnapshotEnvelope:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean }
+        response:
+          type: [object, "null"]
+          additionalProperties: true
+          description: |
+            Raw cgminer JSON payload for the requested command. The inner
+            shape depends on the cgminer command (SUMMARY, DEVS, POOLS,
+            STATS) and varies across firmware; intentionally declared
+            open so firmware variation doesn't invalidate the envelope
+            contract. Consumers should navigate it defensively.
+        error: { type: [string, "null"] }
+      description: |
+        Envelope for /v2/miners/{miner}/{summary,stats,devices,pools}.
+        A successful snapshot has `ok: true` with `response:` populated
+        and `error: null`. A failed fetch has `ok: false`, `error:`
+        populated with a short message, and `response:` typically null.
+
+    GraphDataEnvelope:
+      type: object
+      required: [fields, data]
+      properties:
+        fields:
+          type: array
+          items: { type: string }
+          description: |
+            Ordered list of column names for the rows in `data`. Callers
+            index into each row by matching on the field name rather
+            than by positional order, so additive column changes are
+            non-breaking.
+        data:
+          type: array
+          items:
+            type: array
+          description: |
+            Array of rows. Each row is a same-length array of values,
+            positionally aligned with `fields`. Value types vary per
+            column (timestamp, number, string) and are not pinned here.
+      description: |
+        Envelope for /v2/graph_data/{hashrate,temperature,availability}.
