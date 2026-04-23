@@ -78,6 +78,50 @@ RSpec.describe CgminerMonitor::Server do
     end
   end
 
+  describe 'server.start log shape' do
+    # Pins the scalar-key contract. A regression that wrapped the config
+    # back into a nested `config:` hash (or dropped a scalar the schema
+    # doc lists as emitted) would break log consumers that grep for
+    # top-level `bind`/`port`/`mongo_url` keys.
+    before do
+      allow(server).to receive(:configure_mongoid!)
+      allow(server).to receive(:bootstrap_mongoid!)
+      allow(server).to receive(:validate_startup!)
+      allow(server).to receive(:install_signal_handlers)
+      allow(server.poller).to receive(:run_until_stopped)
+      allow(server.poller).to receive(:stop)
+      fake_launcher = instance_double(Puma::Launcher, run: nil, stop: nil)
+      allow(server).to receive(:build_puma_launcher).and_return(fake_launcher)
+      server.instance_variable_get(:@booted).push(true)
+      server.instance_variable_get(:@signals).push(:stop)
+    end
+
+    after do
+      CgminerMonitor::HttpApp.configure_for_test!(miners: nil, poller: nil, started_at: nil)
+    end
+
+    it 'emits flat scalar keys (pid, bind, port, log_format, log_level, mongo_url) — no nested config hash' do
+      captured = nil
+      allow(CgminerMonitor::Logger).to receive(:info) do |fields|
+        captured = fields if fields[:event] == 'server.start'
+      end
+
+      server.run
+
+      expect(captured).not_to be_nil
+      expect(captured).to include(
+        event: 'server.start',
+        pid: Process.pid,
+        bind: config.http_host,
+        port: config.http_port,
+        log_format: config.log_format,
+        log_level: config.log_level
+      )
+      expect(captured[:mongo_url]).to match(%r{\Amongodb://})
+      expect(captured).not_to have_key(:config)
+    end
+  end
+
   describe 'signal handling' do
     it 'installs TERM, INT, and HUP signal handlers' do
       trapped = []

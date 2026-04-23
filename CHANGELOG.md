@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-04-23
+
+### Added
+- **OpenAPI envelope schemas** for the four miner-snapshot endpoints
+  (`/v2/miners/{miner}/{summary,stats,devices,pools}`) and the three
+  graph-data endpoints (`/v2/graph_data/{hashrate,temperature,availability}`).
+  Previously these 200 responses had `description:` only with no
+  `content:` block; the seven endpoints now reference one of two
+  reusable `components.schemas` (`SnapshotEnvelope` with `{ok, response,
+  error}`; `GraphDataEnvelope` with `{fields, data}`). The inner
+  `response:` on snapshot endpoints stays declared open
+  (`additionalProperties: true`) — cgminer-firmware payload drift is
+  not part of this envelope contract. Bumps OpenAPI `info.version`
+  `"2.0.0"` → `"2.1.0"` (additive, non-breaking). New
+  `spec/openapi_schema_spec.rb` pins the `$ref` wiring so a future
+  refactor that silently drops a reference fails loudly.
+- **`bundle-audit` in CI** (`.github/workflows/ci.yml`). New `audit`
+  job runs `bundle exec bundle-audit check --update` on every push
+  and PR, gating merges on known CVEs in `Gemfile.lock`. Advisory
+  DB is refreshed on each run. Also available locally as
+  `bundle exec rake audit`.
+- **Dependabot config** (`.github/dependabot.yml`). Weekly bump PRs
+  for Bundler, GitHub Actions, and Docker `FROM` base images, with
+  `open-pull-requests-limit: 3` per ecosystem. `versioning-strategy:
+  lockfile-only` on bundler keeps gemspec `~>` bounds stable — the
+  lockfile moves forward automatically, but a human widens bounds
+  when intent is to adopt a new line. PRs target `develop`.
+
+### Changed
+- **README `Security` section** expanded into a `Security posture`
+  section with an explicit trusted-network stance, an enumeration
+  of what the `/v2/*` endpoints leak in plaintext (miner list,
+  per-rig telemetry, Prometheus metrics, healthz, OpenAPI/docs),
+  and a reverse-proxy + TLS nginx snippet. Posture itself is
+  unchanged (monitor remains auth-free by design); only the
+  documentation is clearer.
+- **`server.start` log entry** now emits flat scalar keys (`pid`,
+  `bind`, `port`, `log_format`, `log_level`, `mongo_url`) rather
+  than a nested `config:` hash. Matches `cgminer_manager`'s
+  `server.start` shape and the style of every other structured-log
+  emit site. Log consumers that queried `config.mongo_url` need to
+  query `mongo_url` directly; `config.*` nested access no longer
+  resolves. `mongo_url` remains credential-redacted.
+
+### Added
+- **`docs/log_schema.md`** — canonical structured-log schema for
+  the three sibling gems, covering reserved keys, standard-key
+  types, namespace reservations (which repo owns `poll.*`,
+  `admin.*`, `rate_limit.*`, etc.), a full per-event catalog with
+  required and optional keys, evolution rules, and grep recipes
+  for log consumers. `cgminer_manager` and `cgminer_api_client`
+  link here rather than duplicate the contract.
+
 ## [1.1.0] — 2026-04-22
 
 ### Added
