@@ -84,7 +84,7 @@ Public surface:
 - `Config.from_env(env = ENV)` — build + validate in one call. Raises `ConfigError` on bad values.
 - `Config.current` — memoized `from_env` result for code paths that want a global handle (primarily `HttpApp`). `Config.reset!` clears the memo (tests only).
 - `#validate!` — runs sanity checks: `interval > 0`, `log_format ∈ {json, text}`, `miners_file` exists, `log_level ∈ {debug, info, warn, error}`.
-- `#public_attrs` — `to_h` with the mongo URL redacted (`mongodb://user:pass@host` → `mongodb://[REDACTED]@host`). Used for logging and `doctor` output.
+- `#public_attrs` — `to_h` with the mongo URL redacted (`mongodb://user:pass@host` → `mongodb://[REDACTED]@host`). Used by `doctor` output and supplies the redacted `mongo_url` value for the `server.start` log entry.
 
 Any constructor field that fails parsing surfaces as a `ConfigError` at boot time, which the CLI translates into exit `78` (`EX_CONFIG`).
 
