@@ -56,6 +56,33 @@ All configuration is via environment variables. No config files are needed excep
 | `CGMINER_MONITOR_HEALTHZ_STARTUP_GRACE` | `60` | Seconds to allow before first poll is expected |
 | `CGMINER_MONITOR_PID_FILE` | unset | Path where `run` writes the server PID on boot and unlinks on shutdown. Required for `cgminer_monitor reload`; operators can also `kill -HUP <pid>` directly. |
 
+### Alerts (webhook sink)
+
+Opt-in per-miner threshold alerts. Disabled by default — leave `ALERTS_ENABLED` unset if you alert through Prometheus + Alertmanager against `/v2/metrics` instead.
+
+| Variable | Default | Description |
+|---|---|---|
+| `CGMINER_MONITOR_ALERTS_ENABLED` | `false` | Master switch. When `false`, all other `ALERTS_*` vars are ignored. |
+| `CGMINER_MONITOR_ALERTS_WEBHOOK_URL` | unset | `http(s)://` URL that receives POSTed alerts. Required when enabled. |
+| `CGMINER_MONITOR_ALERTS_WEBHOOK_FORMAT` | `generic` | One of `generic`, `slack`, `discord`. `generic` is a stable JSON contract; the other two reshape to each platform's incoming-webhook body. |
+| `CGMINER_MONITOR_ALERTS_HASHRATE_MIN_GHS` | unset | Fire `hashrate_below` when a miner's `GHS 5s` drops below this. Leave unset to disable this rule. |
+| `CGMINER_MONITOR_ALERTS_TEMPERATURE_MAX_C` | unset | Fire `temperature_above` when any device temperature exceeds this. Leave unset to disable this rule. |
+| `CGMINER_MONITOR_ALERTS_OFFLINE_AFTER_SECONDS` | unset | Fire `offline` when a miner's last successful poll is older than this. Leave unset to disable this rule. |
+| `CGMINER_MONITOR_ALERTS_COOLDOWN_SECONDS` | `300` | Minimum time between re-fires of the same `(miner, rule)` while it stays violating. |
+| `CGMINER_MONITOR_ALERTS_WEBHOOK_TIMEOUT_SECONDS` | `2` | Per-POST open+read timeout. One attempt, no retry. Failures log `event=alert.webhook_failed` and do not abort the poll loop. |
+
+At least one of the three rule thresholds must be set when `ALERTS_ENABLED=true` — the service refuses to boot otherwise. A Slack example:
+
+```bash
+export CGMINER_MONITOR_ALERTS_ENABLED=true
+export CGMINER_MONITOR_ALERTS_WEBHOOK_URL='https://hooks.slack.com/services/AAA/BBB/CCC'
+export CGMINER_MONITOR_ALERTS_WEBHOOK_FORMAT=slack
+export CGMINER_MONITOR_ALERTS_TEMPERATURE_MAX_C=85
+export CGMINER_MONITOR_ALERTS_OFFLINE_AFTER_SECONDS=600
+```
+
+See [`docs/log_schema.md`](docs/log_schema.md) for the `alert.*` event catalog and the generic webhook body shape.
+
 ### Miners file
 
 Create a `config/miners.yml` with your cgminer instances:
