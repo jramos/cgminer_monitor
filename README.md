@@ -214,9 +214,42 @@ cgminer_monitor is a standalone process (not a Rails engine). It runs two thread
 
 See [MIGRATION.md](MIGRATION.md) for a detailed guide on migrating from cgminer_monitor 0.x (the Rails engine version).
 
-## Security
+## Security posture
 
-The HTTP API has **no authentication or authorization**. It is designed for trusted local networks. If exposing to untrusted networks, place it behind a reverse proxy with authentication.
+Default bind is `127.0.0.1:9292`. The service is designed for trusted local networks; to expose it beyond localhost, put it behind a reverse proxy that terminates TLS. The HTTP API has no authentication and intentionally doesn't — adding auth piecemeal to a read-only telemetry surface is worse than having the trust boundary clearly in scope. If you need auth, layer it at the reverse proxy.
+
+The `/v2/*` endpoints expose operationally sensitive data that should not cross an untrusted network in plaintext:
+
+- `/v2/miners` — the configured miner list, including host:port of every rig.
+- `/v2/miners/:id/{summary,stats,devices,pools}` — per-rig hashrate, temperature, device inventory, and pool URLs + usernames. Pool passwords are typically redacted by cgminer (`***`), but this is firmware-dependent and not guaranteed — some forks return the literal password.
+- `/v2/graph_data/{hashrate,temperature,availability}` — time-series per rig.
+- `/v2/metrics` — Prometheus exposition with per-miner, per-device labeled gauges (`cgminer_hashrate_ghs`, `cgminer_temperature_celsius`, `cgminer_available`) plus fleet-wide `cgminer_monitor_polls_total` and `cgminer_monitor_last_poll_age_seconds`. This is the whole fleet inventory in a single GET and is the strongest argument for TLS.
+- `/v2/healthz` — fleet-size disclosure: `miners_configured`, `miners_available`, `last_poll_age_s`, `uptime_s`.
+- `/openapi.yml` and `/docs` — the schema and a live Swagger UI.
+
+### Reverse proxy with TLS
+
+Terminate TLS at nginx (or your proxy of choice) and point it at the loopback bind:
+
+    server {
+        listen 443 ssl http2;
+        server_name monitor.example.com;
+
+        ssl_certificate     /etc/letsencrypt/live/monitor.example.com/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/monitor.example.com/privkey.pem;
+
+        location / {
+            proxy_set_header Host              $host;
+            proxy_set_header X-Real-IP         $remote_addr;
+            proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_pass http://127.0.0.1:9292;  # adjust if CGMINER_MONITOR_HTTP_PORT is not 9292
+        }
+    }
+
+Layer `auth_basic` at the `location` block if you want HTTP Basic Auth on top; monitor itself doesn't gate requests, so the proxy is the right place for it. If Prometheus scrapes `/v2/metrics` across a network boundary, scrape it through the same proxy rather than exposing `127.0.0.1:9292` directly.
+
+Monitor also writes to MongoDB over `CGMINER_MONITOR_MONGO_URL`; if Mongo lives on a separate host, that link is operator-configured and plaintext by default. Use Mongo's own TLS + auth support (or a private network) to keep the write path as well-protected as the read surface.
 
 ## Further Reading
 

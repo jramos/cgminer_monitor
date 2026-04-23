@@ -20,6 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lockfile moves forward automatically, but a human widens bounds
   when intent is to adopt a new line. PRs target `develop`.
 
+### Changed
+- **README `Security` section** expanded into a `Security posture`
+  section with an explicit trusted-network stance, an enumeration
+  of what the `/v2/*` endpoints leak in plaintext (miner list,
+  per-rig telemetry, Prometheus metrics, healthz, OpenAPI/docs),
+  and a reverse-proxy + TLS nginx snippet. Posture itself is
+  unchanged (monitor remains auth-free by design); only the
+  documentation is clearer.
+
 ## [1.1.0] — 2026-04-22
 
 ### Added
