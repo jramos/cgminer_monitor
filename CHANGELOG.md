@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **OpenAPI envelope schemas** for the four miner-snapshot endpoints
+  (`/v2/miners/{miner}/{summary,stats,devices,pools}`) and the three
+  graph-data endpoints (`/v2/graph_data/{hashrate,temperature,availability}`).
+  Previously these 200 responses had `description:` only with no
+  `content:` block; the seven endpoints now reference one of two
+  reusable `components.schemas` (`SnapshotEnvelope` with `{ok, response,
+  error}`; `GraphDataEnvelope` with `{fields, data}`). The inner
+  `response:` on snapshot endpoints stays declared open
+  (`additionalProperties: true`) — cgminer-firmware payload drift is
+  not part of this envelope contract. Bumps OpenAPI `info.version`
+  `"2.0.0"` → `"2.1.0"` (additive, non-breaking). New
+  `spec/openapi_schema_spec.rb` pins the `$ref` wiring so a future
+  refactor that silently drops a reference fails loudly.
 - **`bundle-audit` in CI** (`.github/workflows/ci.yml`). New `audit`
   job runs `bundle exec bundle-audit check --update` on every push
   and PR, gating merges on known CVEs in `Gemfile.lock`. Advisory
