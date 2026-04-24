@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---- Build stage ----
-FROM ruby:3.4-slim AS builder
+FROM ruby:4.0-slim AS builder
 
 RUN apt-get update -qq && \
     apt-get install -y --no-install-recommends build-essential git && \
@@ -19,7 +19,7 @@ RUN bundle config set --local without 'development' && \
 COPY . .
 
 # ---- Runtime stage ----
-FROM ruby:3.4-slim
+FROM ruby:4.0-slim
 
 WORKDIR /app
 
