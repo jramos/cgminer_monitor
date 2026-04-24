@@ -196,6 +196,16 @@ RSpec.describe CgminerMonitor::Config do
         expect { described_class.from_env(env) }
           .to raise_error(CgminerMonitor::ConfigError, /TEMPERATURE_MAX_C must be a valid float/)
       end
+
+      it 'raises ConfigError when set but empty (distinguishes from unset)' do
+        env = valid_env.merge(
+          'CGMINER_MONITOR_ALERTS_ENABLED' => 'true',
+          'CGMINER_MONITOR_ALERTS_WEBHOOK_URL' => 'http://example.com/hook',
+          'CGMINER_MONITOR_ALERTS_TEMPERATURE_MAX_C' => ''
+        )
+        expect { described_class.from_env(env) }
+          .to raise_error(CgminerMonitor::ConfigError, /TEMPERATURE_MAX_C is set but empty/)
+      end
     end
 
     describe 'parse_optional_int' do
@@ -212,6 +222,16 @@ RSpec.describe CgminerMonitor::Config do
         )
         expect { described_class.from_env(env) }
           .to raise_error(CgminerMonitor::ConfigError, /OFFLINE_AFTER_SECONDS must be a valid integer/)
+      end
+
+      it 'raises ConfigError when set but empty' do
+        env = valid_env.merge(
+          'CGMINER_MONITOR_ALERTS_ENABLED' => 'true',
+          'CGMINER_MONITOR_ALERTS_WEBHOOK_URL' => 'http://example.com/hook',
+          'CGMINER_MONITOR_ALERTS_OFFLINE_AFTER_SECONDS' => ''
+        )
+        expect { described_class.from_env(env) }
+          .to raise_error(CgminerMonitor::ConfigError, /OFFLINE_AFTER_SECONDS is set but empty/)
       end
     end
 
@@ -233,6 +253,12 @@ RSpec.describe CgminerMonitor::Config do
         env = alerts_env.merge('CGMINER_MONITOR_ALERTS_WEBHOOK_URL' => 'ftp://example.com/hook')
         expect { described_class.from_env(env) }
           .to raise_error(CgminerMonitor::ConfigError, /scheme must be http or https/)
+      end
+
+      it 'raises when webhook URL has no host (e.g. "http:/")' do
+        env = alerts_env.merge('CGMINER_MONITOR_ALERTS_WEBHOOK_URL' => 'http:/')
+        expect { described_class.from_env(env) }
+          .to raise_error(CgminerMonitor::ConfigError, /must include a host/)
       end
 
       it 'raises on unknown webhook format' do

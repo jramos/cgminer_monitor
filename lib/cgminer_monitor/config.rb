@@ -50,6 +50,11 @@ module CgminerMonitor
         raise ConfigError, "alerts_webhook_url is not a valid URL: #{alerts_webhook_url.inspect}"
       end
       raise ConfigError, "alerts_webhook_url scheme must be http or https" unless %w[http https].include?(uri.scheme)
+      # URI.parse('http:/') is a successful parse but yields a URI with no
+      # host — Net::HTTP.start(nil, nil, ...) would raise ArgumentError at
+      # first fire, deferring the bad-config signal from boot to whenever
+      # the first alert tries to emit. Fail at boot instead.
+      raise ConfigError, "alerts_webhook_url must include a host" if uri.host.to_s.empty?
 
       unless %w[generic slack discord].include?(alerts_webhook_format)
         raise ConfigError,
@@ -130,8 +135,15 @@ module CgminerMonitor
       raise ConfigError, "#{key} must be a boolean (1/0/true/false/yes/no/on/off), got: #{env[key].inspect}"
     end
 
+    # An env key that is *set but empty* (`export FOO=`) is operator
+    # intent expressed ambiguously — did they mean to unset it and
+    # typo, or did they mean the rule should be disabled? We refuse
+    # both interpretations and fail loud. Matches the project's
+    # fail-fast-on-config posture over the Float(..., exception: false)
+    # silent-disable behavior.
     def parse_optional_float(env, key)
-      return nil unless env.key?(key) && !env[key].to_s.empty?
+      return nil unless env.key?(key)
+      raise ConfigError, "#{key} is set but empty" if env[key].to_s.empty?
 
       Float(env[key])
     rescue ArgumentError, TypeError
@@ -139,7 +151,8 @@ module CgminerMonitor
     end
 
     def parse_optional_int(env, key)
-      return nil unless env.key?(key) && !env[key].to_s.empty?
+      return nil unless env.key?(key)
+      raise ConfigError, "#{key} is set but empty" if env[key].to_s.empty?
 
       Integer(env[key])
     rescue ArgumentError, TypeError
