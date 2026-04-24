@@ -153,6 +153,28 @@ Private surface worth noting:
 - `normalize_metric(field)` — lowercases, replaces spaces with underscores, maps `%` to `_pct`. Turns `"Pool Rejected%"` into `pool_rejected_pct`.
 - `build_miner_pool(miners_file)` — the `CgminerApiClient::MinerPool.allocate` + manual `.miners=` dance that honors a configurable miners path.
 
+### `CgminerMonitor::AlertEvaluator` and `CgminerMonitor::WebhookClient`
+**Files:** `lib/cgminer_monitor/alert_evaluator.rb`, `lib/cgminer_monitor/webhook_client.rb`
+
+Opt-in alerting side. Runs inside the poller thread, once per poll tick, *after* `poll.complete` — preserves the poll-complete cadence for stall detection. Disabled by default (`alerts_enabled=false`) — the evaluator early-returns.
+
+`AlertEvaluator#evaluate(now)`:
+- Reads the freshly-written `Snapshot` collection (mirrors how `HttpApp#build_prometheus_metrics` extracts hashrate, temperature, availability) and computes three per-miner readings: `hashrate_below` (from `SUMMARY.first['GHS 5s']`), `temperature_above` (max over `DEVS[].Temperature`), and `offline` (seconds since last ok-snapshot, or `0` if last poll was ok).
+- Transitions state in `AlertState` docs (`alert_states` collection). The state machine is a per-`(miner, rule)` ok/violating pair with cooldown-gated re-fire — first-ever violating observation fires; ok→violating fires; violating→healthy resolves; violating→violating re-fires only if `cooldown_seconds` have passed since the last fire.
+- Emits `alert.fired` / `alert.resolved` log events and invokes the injected `WebhookClient#fire`. Evaluator exceptions are caught at the `Poller` call site and logged as `alert.evaluator_error`; a bug in alert logic never kills the poll loop. Mongo write failures inside the evaluator are caught locally and logged as `alert.state_write_failed`; the evaluator continues with the next rule.
+
+`WebhookClient#fire(...)`:
+- Single `Net::HTTP::Post` attempt, `open_timeout` + `read_timeout` from `config.alerts_webhook_timeout_seconds` (default 2s). No retry.
+- Dispatches the body shape on `config.alerts_webhook_format`: `generic` (stable JSON contract), `slack` (legacy `attachments[]` — Block Kit doesn't support the color sidebar), `discord` (native `embeds[]` with decimal RGB color).
+- All failure modes — non-2xx, `Net::OpenTimeout`, `Net::ReadTimeout`, `SocketError`, `Errno::ECONNREFUSED`, outer `StandardError` — log `alert.webhook_failed` and return. The semantic event is persisted in `alert_states`; only the notification sink missed it.
+
+See `docs/log_schema.md` for the `alert.*` event catalog and the full standard-keys table.
+
+### `CgminerMonitor::AlertState` (Mongoid document)
+**File:** `lib/cgminer_monitor/alert_state.rb`
+
+Per-`(miner, rule)` state for the evaluator. Composite string `_id` (`"#{miner}|#{rule}"`) enforces uniqueness via Mongo's implicit `_id` index — no secondary unique index. Fields: `miner`, `rule`, `state` (`"ok"` | `"violating"`), `threshold`, `last_observed`, `last_fired_at`, `last_transition_at`. Survives restart — restart-with-violating-rig fires on the first post-restart poll, which is correct (the event is new to the consumer).
+
 ### `CgminerMonitor::Server`
 **File:** `lib/cgminer_monitor/server.rb`
 
@@ -162,7 +184,7 @@ Responsibilities:
 - Install SIGTERM/SIGINT handlers **before** Puma starts (and reinstall after, see `architecture.md`).
 - Configure Mongoid from `config.mongo_url`.
 - `validate_startup!` — verify `miners.yml` parses non-empty and Mongo is reachable (raises `ConfigError` on empty, `Mongo::Error` on unreachable).
-- `bootstrap_mongoid!` — programmatic `store_in` + `create_collection` for `Sample`; `create_indexes` for `Snapshot`.
+- `bootstrap_mongoid!` — programmatic `store_in` + `create_collection` for `Sample`; `create_indexes` for `Snapshot` and `AlertState`.
 - Wire up `HttpApp` Sinatra settings (`settings.poller`, `settings.started_at`, `settings.configured_miners`) for health-check and metrics access via `HttpApp.set :key, value`.
 - Spawn Poller and Puma threads; block on `@stop.pop`.
 - On signal: stop poller, `join` with shutdown timeout, stop launcher, `join` again, exit 0.

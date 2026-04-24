@@ -100,6 +100,37 @@ classDiagram
 
 **Why a regular collection rather than time-series:** `latest_snapshot` is write-heavy by upsert (one write per miner per command per poll cycle), and reads mostly look up single rows by compound key. Time-series wouldn't buy anything here.
 
+### `CgminerMonitor::AlertState` → `alert_states` regular collection
+
+Regular Mongoid collection. One doc per `(miner, rule)` pair, upserted by the `AlertEvaluator` on each poll tick — provided alerts are enabled. Collection is empty when `alerts_enabled=false`. Exists only to persist per-rule state across restart so a hashrate-below-threshold rig doesn't re-page on every monitor cold-start.
+
+```mermaid
+classDiagram
+    class AlertState {
+        <<document>>
+        +_id: String
+        +miner: String
+        +rule: String
+        +state: String
+        +threshold: Float
+        +last_observed: Float
+        +last_fired_at: Time?
+        +last_transition_at: Time
+    }
+```
+
+**Fields:**
+- `_id` — composite `"#{miner}|#{rule}"`. Overrides Mongoid's default `BSON::ObjectId` via a default lambda; enforces `(miner, rule)` uniqueness through the implicit `_id` index.
+- `miner` — `"host:port"` string.
+- `rule` — one of `"hashrate_below"`, `"temperature_above"`, `"offline"`.
+- `state` — `"ok"` or `"violating"`.
+- `threshold` — snapshot of the configured threshold at emit time (float; seconds for `offline`).
+- `last_observed` — most recent metric reading; diagnostic only.
+- `last_fired_at` — set on fire, preserved on cooldown-held re-violation. Drives cooldown checks: `(now - last_fired_at) >= cooldown_seconds` means a re-fire is due.
+- `last_transition_at` — most recent ok↔violating transition.
+
+**Indexes:** only the implicit `_id` index. No secondary index needed; the composite `_id` shape *is* the compound key.
+
 ### Writes go in bulk, reads use simple criteria
 
 The Poller issues one `insert_many` per poll cycle for samples (potentially hundreds of rows) and one `bulk_write` with `ordered: false` for snapshots. `ordered: false` means one miner's snapshot upsert failing doesn't block the others.

@@ -105,6 +105,11 @@ sequenceDiagram
         Poller->>Snapshot: collection.bulk_write(ops, ordered: false)
         Poller->>Logger: 'poll.complete' with counts
 
+        opt alerts_enabled
+            Poller->>Poller: @alert_evaluator.evaluate(now)
+            Note over Poller: rescues StandardError, logs alert.evaluator_error
+        end
+
         Loop->>Clock: elapsed = CLOCK_MONOTONIC - started_at
         Loop->>Sleep: remaining = interval - elapsed
         alt remaining > 0
@@ -119,6 +124,60 @@ sequenceDiagram
 - Errors from cgminer (per-miner) land as `MinerResult.failure` inside the `PoolResult`. `Poller#process_failure` turns those into failed `Snapshot` docs rather than letting them halt the poll.
 - `Mongo::Error` and generic `StandardError` at the top of `poll_once` are caught, counted, and logged. They don't crash the thread. The supervisor sees a process that's still running but whose `/metrics` `cgminer_monitor_polls_total{result="failed"}` is climbing.
 - `@cv.wait(@mutex, remaining)` is how `Poller#stop` can wake the sleep early — it signals the same condvar. See `architecture.md`.
+
+## 2a. Alert evaluation (opt-in, end of each poll)
+
+Runs inside the poller thread, *after* `poll.complete` so the completion log's cadence stays clean for stall detection. Disabled by default; the evaluator early-returns when `alerts_enabled=false`.
+
+```mermaid
+sequenceDiagram
+    participant Poller
+    participant Evaluator as AlertEvaluator
+    participant Snapshot
+    participant State as AlertState
+    participant Client as WebhookClient
+    participant Sink as webhook URL
+    participant Logger
+
+    Poller->>Evaluator: evaluate(now)
+    alt alerts_enabled=false
+        Evaluator-->>Poller: return
+    else enabled
+        Evaluator->>Snapshot: where(command, ok) for each configured rule
+        Snapshot-->>Evaluator: latest per miner
+
+        loop each (miner, rule) with a non-nil observed value
+            Evaluator->>State: find by composite _id
+            State-->>Evaluator: prior state (or nil)
+
+            alt violating + (no prior OR prior=ok OR cooldown elapsed)
+                Evaluator->>State: upsert state=violating, last_fired_at=now
+                Evaluator->>Logger: 'alert.fired'
+                Evaluator->>Client: fire(...)
+                Client->>Sink: POST JSON (generic|slack|discord)
+                Sink-->>Client: 2xx or error
+                opt non-2xx or timeout or network error
+                    Client->>Logger: 'alert.webhook_failed'
+                end
+            else healthy + prior=violating
+                Evaluator->>State: upsert state=ok
+                Evaluator->>Logger: 'alert.resolved'
+                Evaluator->>Client: fire(...)
+                Client->>Sink: POST JSON
+            else other (no emit)
+                Evaluator->>State: keep or lazily upsert ok
+            end
+        end
+
+        Evaluator->>Logger: 'alert.evaluation_complete' {duration_ms, counts}
+    end
+```
+
+**Key observations:**
+- Synchronous inside the poller thread — a slow webhook delays the *next* poll by up to `alerts_webhook_timeout_seconds` (default 2s), never the current `poll.complete` timestamp.
+- Composite string `_id` on `AlertState` makes the upsert a single round-trip keyed off `(miner, rule)`; no secondary index.
+- Cooldown (`alerts_cooldown_seconds`, default 300s) re-fires so a consumer that lost a notification gets re-paged while the rule stays violating.
+- Webhook failures never abort the evaluator or the poll — the state is persisted either way. The semantic event happened; the sink just missed it.
 
 ## 3. HTTP request handling
 

@@ -61,6 +61,10 @@ Keys that appear across multiple events are named consistently. When you add a n
 | `retry_after`     | integer          | `42`                                        | seconds; paired with 429 responses |
 | `miner`           | string           | `"10.0.0.5:4028"`                           | scalar rig identifier — `"host:port"` |
 | `miners`          | integer          | `3`                                         | count of miners (or an array where the emit site documents it). Never a single rig |
+| `rule`            | string           | `"hashrate_below"`                          | alert rule name; one of `hashrate_below`, `temperature_above`, `offline` |
+| `threshold`       | number           | `1000.0`                                    | snapshot of the configured threshold at emit time (alert events only) |
+| `observed`        | number           | `732.5`                                     | the observed value that triggered a fire/resolve (alert events only) |
+| `unit`            | string           | `"GH/s"`                                    | unit for `threshold`/`observed` — `"GH/s"`, `"C"`, or `"seconds"` |
 | `log_format`      | string           | `"json"` or `"text"`                        | effective formatter — `server.start` only |
 | `log_level`       | string           | `"info"`                                    | effective level threshold — `server.start` only |
 | `mongo_url`       | string           | `"mongodb://[REDACTED]@db:27017/monitor"`   | always credential-redacted; `server.start` only |
@@ -81,6 +85,7 @@ Namespaces partition the event space; each prefix is owned by exactly one repo e
 
 **cgminer_monitor only:**
 
+- `alert.*` — per-miner threshold alerts evaluated at end-of-poll (`alert.fired`, `alert.resolved`, `alert.webhook_failed`, `alert.evaluator_error`, `alert.state_write_failed`, `alert.evaluation_complete`). Opt-in via `CGMINER_MONITOR_ALERTS_ENABLED=true`.
 - `poll.*` — the monitoring poll loop (`poll.complete`, `poll.miner_failed`, `poll.unexpected_error`).
 - `mongo.*` — Mongo write failures from the poll loop (`mongo.write_failed`).
 - `migrate.*` — one-shot index/migration operations (`migrate.complete`).
@@ -113,6 +118,19 @@ Organized alphabetically within namespace. "Required" columns list keys beyond t
 | `admin.auth_misconfigured` | warn | `AdminAuth` | `path`, `remote_ip`, `user_agent` | |
 | `admin.command` | info | `HttpApp` via `AdminLogging.command_log_entry` | `request_id`, `user`, `remote_ip`, `user_agent`, `session_id_hash`, `command`, `scope` | `args` and other per-command extras |
 | `admin.result` | info | `HttpApp` via `AdminLogging.result_log_entry` | `request_id`, `command`, `scope`, `ok_count`, `failed_count`, `duration_ms` | |
+
+### `alert.*` (cgminer_monitor)
+
+Opt-in per-miner threshold alerts. Wire-up: `CGMINER_MONITOR_ALERTS_ENABLED=true` plus a webhook URL and at least one of the three rule thresholds (`ALERTS_HASHRATE_MIN_GHS`, `ALERTS_TEMPERATURE_MAX_C`, `ALERTS_OFFLINE_AFTER_SECONDS`). See the repo README for the full env matrix.
+
+| Event | Level | Emitter | Required keys | Optional |
+|-------|-------|---------|---------------|----------|
+| `alert.fired` | warn | `AlertEvaluator` | `miner`, `rule`, `threshold`, `observed`, `unit` | |
+| `alert.resolved` | info | `AlertEvaluator` | `miner`, `rule`, `threshold`, `observed`, `unit` | |
+| `alert.evaluation_complete` | info | `AlertEvaluator` (one per poll tick) | `duration_ms`, `rules_evaluated`, `fired_count`, `resolved_count` | |
+| `alert.evaluator_error` | error | `Poller` (catches the evaluator) | `error`, `message`, `backtrace` | |
+| `alert.state_write_failed` | error | `AlertEvaluator` | `miner`, `rule`, `error`, `message` | |
+| `alert.webhook_failed` | warn | `WebhookClient` | `miner`, `rule`, `error`, `message` | `status` (HTTP code on non-2xx responses) |
 
 ### `healthz.*` (cgminer_monitor)
 
