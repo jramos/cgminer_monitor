@@ -11,7 +11,7 @@ module CgminerMonitor
     def initialize(config, miner_pool: nil, alert_evaluator: nil)
       @config          = config
       @miner_pool      = miner_pool || build_miner_pool(config.miners_file)
-      @alert_evaluator = alert_evaluator || AlertEvaluator.new(config)
+      @alert_evaluator = alert_evaluator || build_alert_evaluator(config)
       @stopped         = false
       @mutex           = Mutex.new
       @cv              = ConditionVariable.new
@@ -222,6 +222,15 @@ module CgminerMonitor
 
     def write_snapshots(ops)
       Snapshot.collection.bulk_write(ops, ordered: false)
+    end
+
+    def build_alert_evaluator(config)
+      restart_client =
+        if config.restart_schedule_url
+          RestartScheduleClient.new(url: config.restart_schedule_url,
+                                    grace_seconds: config.restart_window_grace_seconds)
+        end
+      AlertEvaluator.new(config, restart_schedule_client: restart_client)
     end
 
     def build_miner_pool(miners_file)

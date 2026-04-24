@@ -314,6 +314,52 @@ RSpec.describe CgminerMonitor::Config do
     end
   end
 
+  describe 'restart-window-suppression config' do
+    it 'defaults restart_schedule_url to nil (feature disabled)' do
+      config = described_class.from_env(valid_env)
+      expect(config.restart_schedule_url).to be_nil
+    end
+
+    it 'defaults restart_window_grace_seconds to 300' do
+      config = described_class.from_env(valid_env)
+      expect(config.restart_window_grace_seconds).to eq(300)
+    end
+
+    it 'reads CGMINER_MONITOR_RESTART_SCHEDULE_URL when set' do
+      env = valid_env.merge(
+        'CGMINER_MONITOR_RESTART_SCHEDULE_URL' => 'http://manager.local:3000/api/v1/restart_schedules.json'
+      )
+      config = described_class.from_env(env)
+      expect(config.restart_schedule_url).to eq('http://manager.local:3000/api/v1/restart_schedules.json')
+    end
+
+    it 'parses CGMINER_MONITOR_RESTART_WINDOW_GRACE_SECONDS as an integer' do
+      env = valid_env.merge('CGMINER_MONITOR_RESTART_WINDOW_GRACE_SECONDS' => '600')
+      expect(described_class.from_env(env).restart_window_grace_seconds).to eq(600)
+    end
+
+    it 'rejects a non-http(s) restart_schedule_url' do
+      env = valid_env.merge('CGMINER_MONITOR_RESTART_SCHEDULE_URL' => 'ftp://manager/sched.json')
+      expect { described_class.from_env(env) }
+        .to raise_error(CgminerMonitor::ConfigError, /scheme must be http or https/)
+    end
+
+    it 'rejects a malformed restart_schedule_url' do
+      env = valid_env.merge('CGMINER_MONITOR_RESTART_SCHEDULE_URL' => 'http:/')
+      expect { described_class.from_env(env) }
+        .to raise_error(CgminerMonitor::ConfigError, /must include a host/)
+    end
+
+    it 'rejects a non-positive grace' do
+      env = valid_env.merge(
+        'CGMINER_MONITOR_RESTART_SCHEDULE_URL' => 'http://manager/sched.json',
+        'CGMINER_MONITOR_RESTART_WINDOW_GRACE_SECONDS' => '0'
+      )
+      expect { described_class.from_env(env) }
+        .to raise_error(CgminerMonitor::ConfigError, /grace_seconds/)
+    end
+  end
+
   describe '#public_attrs' do
     it 'redacts credentials from mongo_url' do
       env = valid_env.merge('CGMINER_MONITOR_MONGO_URL' => 'mongodb://user:secret@host:27017/db')

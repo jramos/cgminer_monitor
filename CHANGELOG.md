@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Read-side suppression of `offline` alerts during a scheduled restart**
+  (`lib/cgminer_monitor/restart_schedule_client.rb`). When
+  `CGMINER_MONITOR_RESTART_SCHEDULE_URL` points at `cgminer_manager`'s
+  `GET /api/v1/restart_schedules.json`, AlertEvaluator skips the
+  `offline` rule for any miner currently inside
+  `[scheduled_minute, scheduled_minute + RESTART_WINDOW_GRACE_SECONDS)`
+  UTC and emits `alert.suppressed_during_restart_window` instead.
+  Window math is UTC seconds-of-day modulo 86_400 so a `23:59` schedule
+  with a 5-minute grace correctly suppresses an alert at 00:02 UTC the
+  following day. The fetch is fail-open: HTTP failure / malformed JSON
+  / missing schedules key all yield an empty schedule map plus a single
+  `restart.schedule_fetch_failed` log per failure, so monitor still
+  pages on real outages even when the manager is down. Two new env
+  vars: `CGMINER_MONITOR_RESTART_SCHEDULE_URL` (default unset →
+  suppression disabled, offline rule fires normally) and
+  `CGMINER_MONITOR_RESTART_WINDOW_GRACE_SECONDS` (default 300).
+  Validated at boot — bad URL or non-positive grace fail loud rather
+  than at first fetch.
 - **Per-miner alerts with a webhook sink**, opt-in via
   `CGMINER_MONITOR_ALERTS_ENABLED=true`. Evaluates three rules per
   poll tick against the freshly-written `Snapshot` collection:

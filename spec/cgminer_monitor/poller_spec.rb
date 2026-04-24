@@ -350,6 +350,29 @@ RSpec.describe CgminerMonitor::Poller do
     end
   end
 
+  describe '#build_alert_evaluator' do
+    it 'wires a RestartScheduleClient when restart_schedule_url is set' do
+      cfg = CgminerMonitor::Config.from_env(
+        'CGMINER_MONITOR_MINERS_FILE' => miners_file_path,
+        'CGMINER_MONITOR_RESTART_SCHEDULE_URL' => 'http://manager/sched.json',
+        'CGMINER_MONITOR_RESTART_WINDOW_GRACE_SECONDS' => '300'
+      )
+      poller = described_class.new(cfg, miner_pool: miner_pool)
+      evaluator = poller.instance_variable_get(:@alert_evaluator)
+      client = evaluator.instance_variable_get(:@restart_schedule_client)
+      expect(client).to be_a(CgminerMonitor::RestartScheduleClient)
+    end
+
+    it 'leaves restart_schedule_client nil when restart_schedule_url is unset' do
+      cfg = CgminerMonitor::Config.from_env(
+        'CGMINER_MONITOR_MINERS_FILE' => miners_file_path
+      )
+      poller = described_class.new(cfg, miner_pool: miner_pool)
+      evaluator = poller.instance_variable_get(:@alert_evaluator)
+      expect(evaluator.instance_variable_get(:@restart_schedule_client)).to be_nil
+    end
+  end
+
   describe '#build_miner_pool with missing file' do
     it 'raises ConfigError when miners_file does not exist' do
       bad_config = CgminerMonitor::Config.from_env(

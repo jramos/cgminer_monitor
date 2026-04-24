@@ -373,6 +373,71 @@ RSpec.describe CgminerMonitor::AlertEvaluator do
       end
     end
 
+    context 'with a restart_schedule_client reporting the miner is in its window' do
+      let(:restart_schedule_client) do
+        instance_double(CgminerMonitor::RestartScheduleClient, in_restart_window?: true)
+      end
+      let(:evaluator) do
+        described_class.new(config,
+                            webhook_client: webhook_client,
+                            restart_schedule_client: restart_schedule_client)
+      end
+
+      before { seed_poll(at_time: now - 900, ok: true) }
+
+      it 'does not fire offline (suppressed during scheduled restart window)' do
+        evaluator.evaluate(now)
+        expect(webhook_client).not_to have_received(:fire).with(
+          hash_including(rule: 'offline')
+        )
+      end
+
+      it 'does not transition AlertState into violating' do
+        evaluator.evaluate(now)
+        state = CgminerMonitor::AlertState.where(_id: "#{miner_id}|offline").first
+        expect(state).to be_nil
+      end
+
+      it 'leaves other rules unaffected' do
+        # Hashrate rule should still fire if its threshold is breached.
+        # Configure a hashrate threshold higher than the seeded value.
+        config_with_hashrate = make_config(
+          'CGMINER_MONITOR_ALERTS_OFFLINE_AFTER_SECONDS' => '600',
+          'CGMINER_MONITOR_ALERTS_HASHRATE_MIN_GHS' => '5000'
+        )
+        # Re-seed snapshot with low hashrate.
+        upsert_snapshot(miner: miner_id, command: 'summary',
+                        response: { 'SUMMARY' => [{ 'GHS 5s' => 1000 }] })
+        evaluator = described_class.new(config_with_hashrate,
+                                        webhook_client: webhook_client,
+                                        restart_schedule_client: restart_schedule_client)
+        evaluator.evaluate(now)
+        expect(webhook_client).to have_received(:fire).with(
+          hash_including(rule: 'hashrate_below')
+        )
+      end
+    end
+
+    context 'with a restart_schedule_client reporting the miner is NOT in its window' do
+      let(:restart_schedule_client) do
+        instance_double(CgminerMonitor::RestartScheduleClient, in_restart_window?: false)
+      end
+      let(:evaluator) do
+        described_class.new(config,
+                            webhook_client: webhook_client,
+                            restart_schedule_client: restart_schedule_client)
+      end
+
+      before { seed_poll(at_time: now - 900, ok: true) }
+
+      it 'fires offline normally' do
+        evaluator.evaluate(now)
+        expect(webhook_client).to have_received(:fire).with(
+          hash_including(event: 'alert.fired', rule: 'offline')
+        )
+      end
+    end
+
     # N-1 / N / N+1 boundary (>=)
     context 'boundary around offline_after_seconds=600' do
       it 'does not fire at 599 seconds (below boundary)' do
