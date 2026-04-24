@@ -183,23 +183,31 @@ module CgminerMonitor
       WebhookClient.new(config)
     end
 
+    # Defensive on every structural assumption: cgminer firmware drift,
+    # proxies, and legacy Snapshot docs have all been observed to
+    # return odd shapes (Hash where Array was expected, string primitives
+    # in an array of hashes, missing keys). A TypeError here would
+    # unwind into Poller's rescue and silently drop alert evaluation
+    # for EVERY OTHER miner on the tick — one bad rig poisoning the
+    # whole fleet's alerts. Return nil for any malformed input so the
+    # rule is skipped for just this miner and the tick continues.
     def extract_hashrate(snapshot)
       summary = snapshot.response&.dig('SUMMARY')
       entry = summary.is_a?(Array) ? summary.first : nil
-      raw = entry && (entry['GHS 5s'] || entry['ghs_5s'])
-      return nil if raw.nil?
+      return nil unless entry.is_a?(Hash)
 
-      Float(raw, exception: false)
+      raw = entry['GHS 5s'] || entry['ghs_5s']
+      raw.nil? ? nil : Float(raw, exception: false)
     end
 
     def extract_temperature(snapshot)
-      devices = snapshot.response&.dig('DEVS') || []
-      temps = devices.map { |d| d['Temperature'] || d['temperature'] }
-                     .map { |t| Float(t, exception: false) }
-                     .compact
-      return nil if temps.empty?
+      devices = snapshot.response&.dig('DEVS')
+      return nil unless devices.is_a?(Array)
 
-      temps.max
+      temps = devices.select { |d| d.is_a?(Hash) }
+                     .map { |d| Float(d['Temperature'] || d['temperature'], exception: false) }
+                     .compact
+      temps.empty? ? nil : temps.max
     end
   end
 end

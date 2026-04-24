@@ -207,6 +207,37 @@ RSpec.describe CgminerMonitor::AlertEvaluator do
         expect(webhook_client).not_to have_received(:fire)
       end
     end
+
+    # Defensive shape-guards: one malformed miner response must never
+    # poison the evaluator's tick for other miners. Pre-fix each of
+    # these would raise TypeError, unwind into Poller's rescue, and
+    # skip alert evaluation for every other rig on the fleet.
+    context 'malformed SUMMARY shapes' do
+      it 'returns nil when SUMMARY is missing' do
+        upsert_snapshot(miner: miner_id, command: 'summary', response: {})
+        expect { evaluator.evaluate(now) }.not_to raise_error
+        expect(webhook_client).not_to have_received(:fire)
+      end
+
+      it 'returns nil when SUMMARY is a Hash instead of Array' do
+        upsert_snapshot(miner: miner_id, command: 'summary',
+                        response: { 'SUMMARY' => { 'GHS 5s' => 500 } })
+        expect { evaluator.evaluate(now) }.not_to raise_error
+        expect(webhook_client).not_to have_received(:fire)
+      end
+
+      it 'returns nil when SUMMARY first entry is not a Hash' do
+        upsert_snapshot(miner: miner_id, command: 'summary',
+                        response: { 'SUMMARY' => ['stringified'] })
+        expect { evaluator.evaluate(now) }.not_to raise_error
+        expect(webhook_client).not_to have_received(:fire)
+      end
+
+      it 'returns nil when response is nil' do
+        upsert_snapshot(miner: miner_id, command: 'summary', ok: true, response: nil)
+        expect { evaluator.evaluate(now) }.not_to raise_error
+      end
+    end
   end
 
   describe 'temperature_above rule' do
@@ -241,6 +272,34 @@ RSpec.describe CgminerMonitor::AlertEvaluator do
         state = CgminerMonitor::AlertState.find("#{miner_id}|temperature_above")
         expect(state.state).to eq 'ok'
         expect(webhook_client).not_to have_received(:fire)
+      end
+    end
+
+    context 'malformed DEVS shapes' do
+      it 'returns nil when DEVS is missing' do
+        upsert_snapshot(miner: miner_id, command: 'devs', response: {})
+        expect { evaluator.evaluate(now) }.not_to raise_error
+        expect(webhook_client).not_to have_received(:fire)
+      end
+
+      it 'returns nil when DEVS is a Hash instead of Array' do
+        upsert_snapshot(miner: miner_id, command: 'devs',
+                        response: { 'DEVS' => { 'Temperature' => 100 } })
+        expect { evaluator.evaluate(now) }.not_to raise_error
+      end
+
+      it 'returns nil when DEVS is empty' do
+        upsert_snapshot(miner: miner_id, command: 'devs', response: { 'DEVS' => [] })
+        expect { evaluator.evaluate(now) }.not_to raise_error
+      end
+
+      it 'filters out non-Hash entries and uses the max of the rest' do
+        upsert_snapshot(miner: miner_id, command: 'devs',
+                        response: { 'DEVS' => ['junk', { 'Temperature' => 95 }, nil] })
+        evaluator.evaluate(now)
+        expect(webhook_client).to have_received(:fire).with(
+          hash_including(event: 'alert.fired', rule: 'temperature_above', observed: 95.0)
+        )
       end
     end
   end
