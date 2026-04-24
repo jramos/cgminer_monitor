@@ -15,8 +15,8 @@ At runtime the process has two threads:
 - **Language:** Ruby 3.2+ (gemspec `required_ruby_version`).
 - **CI matrix:** Ruby 3.2/3.3/3.4 required × Mongo 6/7. Ruby 4.0 and `head` are best-effort (Mongoid 9 doesn't officially support them yet).
 - **Storage:** MongoDB 5.0+. 5.0 is the minimum for time-series collections; 6.0 is what the GitHub Actions matrix tests against because it's the earliest Mongo version available in `services:` runners.
-- **Runtime gem deps:** `cgminer_api_client ~> 0.3.0`, `mongoid ~> 9.0`, `sinatra >= 4.0`, `puma >= 6.0`, `rack-cors ~> 2.0`.
-- **Dev deps:** `rspec >= 3.13`, `rack-test >= 2.1`, `rubocop >= 1.60` (+ `-rake`, `-rspec`), `rake >= 13.2`, `simplecov >= 0.22`.
+- **Runtime gem deps:** `cgminer_api_client ~> 0.3.0`, `mongoid ~> 9.0`, `sinatra >= 4.0`, `puma >= 6.0`, `rack-cors ~> 2.0`. Alert webhook delivery uses stdlib `Net::HTTP` — no additional runtime gem.
+- **Dev deps:** `rspec >= 3.13`, `rack-test >= 2.1`, `rubocop >= 1.60` (+ `-rake`, `-rspec`), `rake >= 13.2`, `simplecov >= 0.22`, `webmock >= 3.24` (scoped to webhook + alerts integration specs).
 - **Test framework:** RSpec. Unit specs at `spec/cgminer_monitor/**`, integration specs at `spec/integration/`, plus a top-level `spec/openapi_consistency_spec.rb` that CI uses to enforce route↔openapi.yml parity.
 - **Lint:** RuboCop with `TargetRubyVersion: 3.2`. Default rake task runs spec + rubocop.
 - **Coverage:** SimpleCov, filter `/spec/`; reports to `coverage/`.
@@ -39,6 +39,9 @@ cgminer_monitor/
 │       ├── snapshot.rb              # Mongoid regular model (latest_snapshot collection)
 │       ├── snapshot_query.rb        # Read-side: for_miner, miners, last_poll_at
 │       ├── poller.rb                # Polling loop, sample extraction, bulk writes
+│       ├── alert_evaluator.rb       # Post-poll: evaluate threshold rules, fire/resolve, call WebhookClient
+│       ├── alert_state.rb           # Mongoid regular model (alert_states collection); composite _id "miner|rule"
+│       ├── webhook_client.rb        # Stdlib Net::HTTP::Post; generic | slack | discord body formats
 │       ├── server.rb                # Orchestrator: Mongoid config, Poller thread, Puma thread, signal handling
 │       ├── http_app.rb              # Sinatra app: /v2/* endpoints, Prometheus, /docs, /openapi.yml
 │       ├── openapi.yml              # OpenAPI 3.1 spec (served at /openapi.yml, lint-checked in CI)
@@ -46,10 +49,11 @@ cgminer_monitor/
 ├── spec/
 │   ├── spec_helper.rb               # SimpleCov + require_relative support/**
 │   ├── cgminer_monitor_spec.rb
-│   ├── cgminer_monitor/             # Unit specs, one per lib/ file
+│   ├── cgminer_monitor/             # Unit specs, one per lib/ file (incl. alert_evaluator_spec, webhook_client_spec)
 │   ├── integration/
 │   │   ├── cli_spec.rb              # Spawns the real bin/ via Open3
 │   │   ├── full_pipeline_spec.rb    # FakeCgminer + Poller + Mongo + HttpApp end-to-end
+│   │   ├── alerts_integration_spec.rb # WebMock-stubbed webhook + real Mongo; fire→resolve + cooldown re-fire
 │   │   └── healthz_spec.rb          # State transitions: starting → healthy → degraded
 │   ├── openapi_consistency_spec.rb  # CI guard: routes vs openapi.yml
 │   └── support/
@@ -93,6 +97,9 @@ graph TB
     Config[CgminerMonitor::Config]
     Server[CgminerMonitor::Server]
     Poller[CgminerMonitor::Poller]
+    Alerts[CgminerMonitor::AlertEvaluator]
+    AlertState[CgminerMonitor::AlertState]
+    Webhook[CgminerMonitor::WebhookClient]
     HttpApp[CgminerMonitor::HttpApp]
     Puma[Puma::Launcher]
     Logger[CgminerMonitor::Logger]
@@ -103,6 +110,7 @@ graph TB
     APIClient[CgminerApiClient::MinerPool]
     Mongo[(MongoDB)]
     Cgminer[cgminer instances]
+    WebhookSink[webhook sink: Slack/Discord/generic]
 
     CLI -->|run| Server
     CLI -->|migrate| Sample
@@ -120,6 +128,14 @@ graph TB
     Poller -->|insert_many| Sample
     Poller -->|bulk_write| Snapshot
 
+    Poller -->|evaluate after poll| Alerts
+    Alerts -->|reads| Snapshot
+    Alerts -->|reads offline from| SampleQ
+    Alerts -->|upsert| AlertState
+    Alerts -->|fire or resolve| Webhook
+    Webhook -->|HTTPS POST| WebhookSink
+    AlertState -->|persists to| Mongo
+
     HttpApp -->|reads via| SampleQ
     HttpApp -->|reads via| SnapshotQ
     HttpApp -.reads settings.poller.-> Poller
@@ -132,6 +148,8 @@ graph TB
     Poller -.-> Logger
     Server -.-> Logger
     HttpApp -.-> Logger
+    Alerts -.-> Logger
+    Webhook -.-> Logger
 ```
 
 ## Key facts worth knowing up front
@@ -144,6 +162,7 @@ graph TB
 6. **The samples collection is a MongoDB time-series collection** (Mongo 5.0+ feature) with an `expire_after` TTL matching `CGMINER_MONITOR_RETENTION_SECONDS`. `cgminer_monitor migrate` (or `Server#bootstrap_mongoid!`) does the `create_collection` call.
 7. **No authentication on the HTTP API.** Designed for trusted networks. Put a reverse proxy in front of it if you're exposing it beyond that.
 8. **`cgminer_api_client` is a hard runtime dependency.** The `Poller` bypasses `CgminerApiClient::MinerPool.new` (which hard-codes a `config/miners.yml` path relative to CWD) by allocating the pool and setting `.miners=` directly, so it can honor the configurable `CGMINER_MONITOR_MINERS_FILE`.
+9. **Alerts are opt-in.** `CGMINER_MONITOR_ALERTS_ENABLED=false` by default, so the default deploy carries zero alert surface (Prometheus users keep their existing pipeline). When enabled, `AlertEvaluator` runs in the Poller thread after the `poll.complete` log, reads the freshly-written `Snapshot` collection (hashrate / temperature) and the `Sample` time-series (offline rule — "seconds since last successful poll"), upserts per-(miner, rule) state into `alert_states`, and POSTs to the configured webhook URL via stdlib `Net::HTTP`. No retry; failures log `alert.webhook_failed` and the poll loop continues.
 
 ## Version and release posture
 
