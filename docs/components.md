@@ -170,6 +170,15 @@ Opt-in alerting side. Runs inside the poller thread, once per poll tick, *after*
 
 See `docs/log_schema.md` for the `alert.*` event catalog and the full standard-keys table.
 
+### `CgminerMonitor::RestartScheduleClient`
+**File:** `lib/cgminer_monitor/restart_schedule_client.rb`
+
+Read-side companion to `cgminer_manager`'s scheduled-restart feature. When `CGMINER_MONITOR_RESTART_SCHEDULE_URL` is set, `Poller#build_alert_evaluator` constructs a client and threads it into `AlertEvaluator`; on every poll tick, before computing `offline` for a miner, the evaluator calls `RestartScheduleClient#in_restart_window?(miner, now)` and skips the rule (with a single `alert.suppressed_during_restart_window` log line) when it returns true.
+
+`#fetch` does one `Net::HTTP::Get` against the URL and caches the parsed schedule map for 30 s (so a 60-miner fleet still results in one HTTP call per ~30 s, not per-miner). Failure modes — `Net::OpenTimeout`, `Net::ReadTimeout`, `SocketError`, `Errno::ECONNREFUSED`, `IOError`, `JSON::ParserError`, non-2xx responses, missing `schedules` key — yield an empty schedule map and a single `restart.schedule_fetch_failed` log per failure. The cached map is preserved across failures rather than oscillating to empty, so a transient blip doesn't drop suppression.
+
+`#in_restart_window?` math is UTC seconds-of-day modulo 86400 to handle midnight wrap. Window is one-sided: only `[scheduled_minute, scheduled_minute + grace_seconds)`, not before. A restart fired at exactly 04:00 takes 30 s to ~5 min for the miner to come back; pre-window suppression is unnecessary because cgminer hasn't gone offline yet.
+
 ### `CgminerMonitor::AlertState` (Mongoid document)
 **File:** `lib/cgminer_monitor/alert_state.rb`
 
