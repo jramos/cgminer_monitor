@@ -132,13 +132,18 @@ sequenceDiagram
     Snapshot->>Mongo: (upsert many)
 
     Poller->>Poller: Logger.info 'poll.complete'
+    opt alerts_enabled
+        Poller->>Poller: AlertEvaluator#evaluate(now)
+        Note over Poller: rescue StandardError → alert.evaluator_error; poll loop continues
+    end
 ```
 
 **Key observations:**
 - `extract_samples` normalizes keys (`"GHS 5s"` → `ghs_5s`, `"Pool Rejected%"` → `pool_rejected_pct`) and only keeps numeric values. String fields (device status, pool URL) are dropped from the samples collection but preserved in full in `latest_snapshot`.
-- Each miner also emits two synthetic per-poll samples: `{command: 'poll', metric: 'ok', v: 0|1}` and `{command: 'poll', metric: 'duration_ms', v: ...}`. These drive the availability graph and the Prometheus `cgminer_available` gauge.
+- Each miner also emits two synthetic per-poll samples: `{command: 'poll', metric: 'ok', v: 0|1}` and `{command: 'poll', metric: 'duration_ms', v: ...}`. These drive the availability graph, the Prometheus `cgminer_available` gauge, **and** the alert evaluator's `offline` rule — which reads the `Sample` time-series (not `Snapshot`, which overwrites `ok` on failure) to answer "seconds since this miner last succeeded."
 - `bulk_write(..., ordered: false)` means snapshot upserts don't short-circuit on the first failure — each miner's snapshot has an independent chance to succeed.
 - Errors at Mongo level are logged and counted; they don't re-raise out of `poll_once`. So a transient Mongo outage degrades polling silently (stats recorded in `polls_failed`) rather than crashing the process.
+- The alert evaluator runs *after* `poll.complete` is logged, so `poll.complete` stays a clean "poll finished and persisted" signal (useful for detecting poll-loop stalls). A slow webhook delays the next poll by at most the configured webhook timeout (`CGMINER_MONITOR_ALERTS_WEBHOOK_TIMEOUT_SECONDS`, default 2s).
 
 ## Request lifecycle (read path)
 
@@ -213,6 +218,9 @@ A shared `Queue` is the rendezvous point for "time to stop." Signal handlers pus
 
 ### Bypass pattern for cgminer_api_client's MinerPool
 `CgminerApiClient::MinerPool.new` hard-codes `'config/miners.yml'` relative to CWD. That doesn't honor monitor's `CGMINER_MONITOR_MINERS_FILE`. So `Poller#build_miner_pool` uses `MinerPool.allocate` and sets `.miners=` directly. It's an intentional escape hatch; if api_client ever grows a constructor that accepts a path, we can delete that ceremony.
+
+### Alert state machine per (miner, rule)
+`AlertEvaluator` is a small state machine with two states (`ok` / `violating`) and a per-(miner, rule) `AlertState` document. Transitions emit `alert.fired` (healthy → violating) and `alert.resolved` (violating → healthy); a cooldown window (`CGMINER_MONITOR_ALERTS_COOLDOWN_SECONDS`, default 300s) re-emits `alert.fired` while a rule stays violating, so receivers that drop a notification get re-paged. The state doc's `_id` is a composite string `"#{miner}|#{rule}"` so Mongo's implicit `_id` index enforces uniqueness without a secondary index. See `data_models.md` for the document shape and `workflows.md` for the transition table.
 
 ### OpenAPI as source of truth, enforced by CI
 `spec/openapi_consistency_spec.rb` walks `HttpApp`'s registered routes and cross-checks them against `lib/cgminer_monitor/openapi.yml`. Drift fails CI. The OpenAPI doc is packaged with the gem and served at `/openapi.yml`; `/docs` embeds Swagger UI.
