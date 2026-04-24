@@ -178,6 +178,8 @@ bundle exec rubocop -A                                 # lint + auto-correct
 
 **Coverage** is always on (SimpleCov in `spec_helper.rb`). Reports in `coverage/` — `.gitignore`d.
 
+**Mermaid validation.** Every `docs/*.md` may contain ` ```mermaid ` blocks. Run `script/validate_mermaid` to lint them all — the script extracts each block and pipes it through `npx @mermaid-js/mermaid-cli`. Requires `node >= 18` and `npx` on PATH. First run is slow (Puppeteer downloads Chromium into `~/.npm/_npx`, ~300 MB; cached after). Not wired into `bundle exec rake` — it's an opt-in local check for docs PRs.
+
 **Manual sandbox** without real miners:
 
 ```sh
