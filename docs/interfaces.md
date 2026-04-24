@@ -74,8 +74,16 @@ All knobs are `ENV` reads at boot via `Config.from_env`. Defaults in parentheses
 | `CGMINER_MONITOR_SHUTDOWN_TIMEOUT` | `10` | Seconds to wait for each of Poller and Puma to stop during graceful shutdown. |
 | `CGMINER_MONITOR_HEALTHZ_STALE_MULTIPLIER` | `2` | Stale threshold = `interval * multiplier` seconds since last poll before `/healthz` returns `degraded`. |
 | `CGMINER_MONITOR_HEALTHZ_STARTUP_GRACE` | `60` | Seconds after boot during which a missing poll still reports `starting` rather than `degraded`. |
+| `CGMINER_MONITOR_ALERTS_ENABLED` | `false` | Master switch for the per-miner alerts feature. When `false`, the evaluator early-returns and zero alert surface is exercised. Accepts `1`/`true`/`yes`/`on` (and their negatives), case-insensitive. |
+| `CGMINER_MONITOR_ALERTS_WEBHOOK_URL` | *(none)* | Required when `ALERTS_ENABLED=true`. Must be `http(s)://<host>[:port]/…` with a non-empty host. Validated at boot. |
+| `CGMINER_MONITOR_ALERTS_WEBHOOK_FORMAT` | `generic` | Webhook body shape. One of `generic` (JSON contract documented in `log_schema.md`), `slack` (Slack incoming-webhook `attachments[]` with color sidebar), or `discord` (Discord `embeds[]` with decimal RGB). |
+| `CGMINER_MONITOR_ALERTS_HASHRATE_MIN_GHS` | *(none)* | Float; per-miner hashrate floor in GH/s. Rule disabled when unset. Fires `alert.fired` / `rule: "hashrate_below"` when the per-miner `SUMMARY.GHS 5s` drops below this. |
+| `CGMINER_MONITOR_ALERTS_TEMPERATURE_MAX_C` | *(none)* | Float; per-miner temperature ceiling in °C (max-over-chips, matching the operator-visible view). Rule disabled when unset. |
+| `CGMINER_MONITOR_ALERTS_OFFLINE_AFTER_SECONDS` | *(none)* | Integer; fires when `now - last_ok_sample_ts` exceeds this. Rule disabled when unset. Falls back to the miner's earliest poll sample when no successful poll has ever been observed. |
+| `CGMINER_MONITOR_ALERTS_COOLDOWN_SECONDS` | `300` | Integer > 0. While a rule stays violating, re-emits `alert.fired` every `cooldown_seconds` so consumers that drop a notification get re-paged. |
+| `CGMINER_MONITOR_ALERTS_WEBHOOK_TIMEOUT_SECONDS` | `2` | Integer > 0. Both open and read timeout for the `Net::HTTP::Post` call. Caps how much a slow webhook can delay the next poll. |
 
-`Config#validate!` fails hard on: non-positive `interval`, unknown `log_format`, nonexistent `miners_file`, unknown `log_level`. Integer parse errors surface the offending env var name verbatim.
+`Config#validate!` fails hard on: non-positive `interval`, unknown `log_format`, nonexistent `miners_file`, unknown `log_level`. Integer parse errors surface the offending env var name verbatim. When `ALERTS_ENABLED=true`, a separate `validate_alerts!` block additionally requires: webhook URL present + host-nonempty + scheme in `{http, https}`; format in `{generic, slack, discord}`; **at least one** of `HASHRATE_MIN_GHS` / `TEMPERATURE_MAX_C` / `OFFLINE_AFTER_SECONDS` set (empty-but-defined floats/ints fail loudly rather than silently disabling a rule).
 
 ## 3. `miners.yml`
 
