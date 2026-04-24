@@ -34,7 +34,7 @@ sequenceDiagram
     end
 
     Puma->>Puma: serve /v2/* requests
-    Note over Puma: concurrent; isolated from Poller
+    Note over Puma: concurrent, isolated from Poller
 
     Note over Main: SIGTERM arrives
     Main->>Queue: signal pushed
@@ -134,7 +134,7 @@ sequenceDiagram
     Poller->>Poller: Logger.info 'poll.complete'
     opt alerts_enabled
         Poller->>Poller: AlertEvaluator#evaluate(now)
-        Note over Poller: rescue StandardError → alert.evaluator_error; poll loop continues
+        Note over Poller: rescue StandardError → alert.evaluator_error, poll loop continues
     end
 ```
 

@@ -63,7 +63,7 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant Loop as run_until_stopped
+    participant Runner as run_until_stopped
     participant Clock
     participant Poller as poll_once
     participant Pool as CgminerApiClient::MinerPool
@@ -76,8 +76,8 @@ sequenceDiagram
     participant Sleep as interruptible_sleep
 
     loop until @stopped
-        Loop->>Clock: started_at = CLOCK_MONOTONIC
-        Loop->>Poller: poll_once
+        Runner->>Clock: started_at = CLOCK_MONOTONIC
+        Runner->>Poller: poll_once
 
         loop each of [summary, devs, pools, stats]
             Poller->>Pool: pool.query(command)
@@ -110,8 +110,8 @@ sequenceDiagram
             Note over Poller: rescues StandardError, logs alert.evaluator_error
         end
 
-        Loop->>Clock: elapsed = CLOCK_MONOTONIC - started_at
-        Loop->>Sleep: remaining = interval - elapsed
+        Runner->>Clock: elapsed = CLOCK_MONOTONIC - started_at
+        Runner->>Sleep: remaining = interval - elapsed
         alt remaining > 0
             Sleep->>Sleep: @cv.wait(@mutex, remaining) unless @stopped
         end
