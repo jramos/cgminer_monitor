@@ -153,16 +153,28 @@ module CgminerMonitor
         end
       end
 
-      if @config.alerts_offline_after_seconds
-        SnapshotQuery.miners.each do |entry|
-          seconds_since = if entry[:ok] then 0.0
-                          else (now - entry[:fetched_at]).to_f
-                          end
-          readings[entry[:miner]]['offline'] = seconds_since
-        end
-      end
+      populate_offline_readings(readings, now) if @config.alerts_offline_after_seconds
 
       readings
+    end
+
+    # Offline = seconds since the miner's last successful poll.
+    # Sourced from the `Sample` time-series collection, not `Snapshot`:
+    # Snapshot keeps only one doc per (miner, command) and overwrites
+    # the `ok` field on failure, so it can't tell us when the miner
+    # last succeeded. The synthetic `poll/ok` samples the Poller writes
+    # every tick ARE the history. Falls back to the miner's earliest
+    # poll sample when it has never succeeded — gives a finite,
+    # serializable "seconds since we first saw this miner" rather than
+    # Infinity (which would break the webhook body's JSON.generate).
+    def populate_offline_readings(readings, now)
+      last_ok  = SampleQuery.last_ok_at_per_miner
+      first_at = SampleQuery.first_poll_at_per_miner
+      SnapshotQuery.miners.each do |entry|
+        miner = entry[:miner]
+        reference = last_ok[miner] || first_at[miner]
+        readings[miner]['offline'] = reference ? (now - reference).to_f : 0.0
+      end
     end
 
     def default_webhook_client(config)

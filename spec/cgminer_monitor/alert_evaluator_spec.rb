@@ -248,11 +248,19 @@ RSpec.describe CgminerMonitor::AlertEvaluator do
   describe 'offline rule' do
     let(:config) { make_config('CGMINER_MONITOR_ALERTS_OFFLINE_AFTER_SECONDS' => '600') }
 
-    context 'when last snapshot failed >= offline_after_seconds ago' do
-      before do
-        upsert_snapshot(miner: miner_id, command: 'summary', ok: false, error: 'connect refused',
-                        fetched_at: now - 900)
-      end
+    # Seeds a Snapshot (for the miners list) and a matching poll/ok
+    # Sample row (which drives last_ok_at_per_miner). Mirrors the
+    # Poller's write pattern: both collections get touched per tick.
+    def seed_poll(at:, ok: true)
+      upsert_snapshot(miner: miner_id, command: 'summary', ok: ok,
+                      response: ok ? { 'SUMMARY' => [{ 'GHS 5s' => 1000 }] } : nil,
+                      error: ok ? nil : 'refused', fetched_at: at)
+      insert_samples(build_sample(miner: miner_id, command: 'poll', metric: 'ok',
+                                  value: ok ? 1.0 : 0.0, ts: at))
+    end
+
+    context 'when last ok is older than threshold' do
+      before { seed_poll(at: now - 900, ok: true) }
 
       it 'fires offline' do
         evaluator.evaluate(now)
@@ -262,17 +270,68 @@ RSpec.describe CgminerMonitor::AlertEvaluator do
       end
     end
 
-    context 'when latest snapshot is ok' do
+    # Regression guard for PR review's Critical #1: Poller upserts
+    # Snapshot.fetched_at = now on every tick regardless of ok, so the
+    # offline rule MUST key on the `poll/ok=1.0` Sample history, not
+    # Snapshot.fetched_at.
+    context 'when recent poll failed but the last ok Sample is old' do
       before do
-        upsert_snapshot(miner: miner_id, command: 'summary', ok: true,
-                        response: { 'SUMMARY' => [{ 'GHS 5s' => 1000 }] },
-                        fetched_at: now - 30)
+        # Poller behavior: every tick upserts the (miner, command) snapshot,
+        # so fetched_at advances even when ok=false.
+        seed_poll(at: now - 900, ok: true)
+        upsert_snapshot(miner: miner_id, command: 'summary', ok: false,
+                        error: 'refused', fetched_at: now - 5)
+        insert_samples(build_sample(miner: miner_id, command: 'poll', metric: 'ok',
+                                    value: 0.0, ts: now - 5))
       end
+
+      it 'still fires offline (keyed on last ok Sample, not latest Snapshot)' do
+        evaluator.evaluate(now)
+        expect(webhook_client).to have_received(:fire).with(
+          hash_including(event: 'alert.fired', rule: 'offline', unit: 'seconds')
+        )
+      end
+    end
+
+    context 'when miner has never succeeded, only failed' do
+      before { seed_poll(at: now - 900, ok: false) }
+
+      it 'fires offline with a finite observed value (falls back to first-ever poll sample)' do
+        evaluator.evaluate(now)
+        state = CgminerMonitor::AlertState.find("#{miner_id}|offline")
+        expect(state.state).to eq 'violating'
+        expect(state.last_observed).to be_within(1).of(900)
+      end
+    end
+
+    context 'when latest poll is ok and recent' do
+      before { seed_poll(at: now - 30, ok: true) }
 
       it 'treats miner as not offline' do
         evaluator.evaluate(now)
         state = CgminerMonitor::AlertState.find("#{miner_id}|offline")
         expect(state.state).to eq 'ok'
+      end
+    end
+
+    # N-1 / N / N+1 boundary (>=)
+    context 'boundary around offline_after_seconds=600' do
+      it 'does not fire at 599 seconds (below boundary)' do
+        seed_poll(at: now - 599, ok: true)
+        evaluator.evaluate(now)
+        expect(CgminerMonitor::AlertState.find("#{miner_id}|offline").state).to eq 'ok'
+      end
+
+      it 'fires at exactly 600 seconds (boundary is inclusive via >=)' do
+        seed_poll(at: now - 600, ok: true)
+        evaluator.evaluate(now)
+        expect(CgminerMonitor::AlertState.find("#{miner_id}|offline").state).to eq 'violating'
+      end
+
+      it 'fires at 601 seconds (above boundary)' do
+        seed_poll(at: now - 601, ok: true)
+        evaluator.evaluate(now)
+        expect(CgminerMonitor::AlertState.find("#{miner_id}|offline").state).to eq 'violating'
       end
     end
   end

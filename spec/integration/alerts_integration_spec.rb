@@ -104,4 +104,60 @@ RSpec.describe 'Alerts integration', :integration do
     evaluator.evaluate(now + 10)
     expect(WebMock).not_to have_requested(:post, webhook_url)
   end
+
+  # Regression guard for the PR review's Critical #1: the offline rule
+  # previously read `fetched_at` regardless of `ok`, so a miner whose
+  # polls kept failing stayed "not offline" forever because Poller
+  # upserts `fetched_at = now` on failure too. Drive through the real
+  # Poller to make sure the fix sticks.
+  context 'offline rule through the real Poller failure path' do
+    let(:offline_config) do
+      CgminerMonitor::Config.from_env(
+        'CGMINER_MONITOR_MINERS_FILE' => miners_file_path,
+        'CGMINER_MONITOR_ALERTS_ENABLED' => 'true',
+        'CGMINER_MONITOR_ALERTS_WEBHOOK_URL' => webhook_url,
+        'CGMINER_MONITOR_ALERTS_OFFLINE_AFTER_SECONDS' => '60',
+        'CGMINER_MONITOR_ALERTS_COOLDOWN_SECONDS' => '1',
+        'CGMINER_MONITOR_ALERTS_WEBHOOK_TIMEOUT_SECONDS' => '2'
+      )
+    end
+
+    let(:miner) { instance_double(CgminerApiClient::Miner, host: '10.0.0.5', port: 4028) }
+    let(:miner_pool) { instance_double(CgminerApiClient::MinerPool, miners: [miner]) }
+    let(:failure_result) do
+      CgminerApiClient::MinerResult.failure(miner, CgminerApiClient::ConnectionError.new('refused'))
+    end
+
+    before do
+      %w[summary devs pools stats].each do |cmd|
+        allow(miner_pool).to receive(:query).with(cmd)
+                                            .and_return(CgminerApiClient::PoolResult.new([failure_result]))
+      end
+    end
+
+    it 'fires offline after repeated Poller failures even though Snapshot.fetched_at keeps moving' do
+      poller = CgminerMonitor::Poller.new(offline_config, miner_pool: miner_pool,
+                                           alert_evaluator: CgminerMonitor::AlertEvaluator.new(offline_config))
+
+      # Seed history: one ok poll Sample 120s back, plus the matching
+      # ok snapshot. "Last ok" is now -120s, well over the 60s threshold.
+      past = Time.now.utc - 120
+      upsert_snapshot(miner: miner_id, command: 'summary', ok: true,
+                      response: { 'SUMMARY' => [{ 'GHS 5s' => 1000 }] },
+                      fetched_at: past)
+      insert_samples(build_sample(miner: miner_id, command: 'poll', metric: 'ok',
+                                  value: 1.0, ts: past))
+
+      # Now the Poller ticks and every command fails. Snapshot.fetched_at
+      # advances to now, but the poll/ok=1.0 Sample history stays anchored
+      # to the past success. Under the old Snapshot-based logic, offline
+      # would never fire.
+      poller.poll_once
+
+      expect(WebMock).to have_requested(:post, webhook_url).at_least_once
+      posted = JSON.parse(WebMock::RequestRegistry.instance.requested_signatures.hash.keys.last.body)
+      expect(posted['event']).to eq 'alert.fired'
+      expect(posted['rule']).to eq 'offline'
+    end
+  end
 end

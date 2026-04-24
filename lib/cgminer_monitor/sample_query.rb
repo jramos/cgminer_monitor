@@ -7,6 +7,40 @@ module CgminerMonitor
 
     module_function
 
+    # Returns { miner_id => ts (Time) } mapping each miner to the
+    # timestamp of its most recent successful poll (synthetic
+    # `meta.command='poll'` / `meta.metric='ok'` / `v=1.0` sample written
+    # by the Poller each tick). The Sample time-series collection is the
+    # only reliable historical source — `Snapshot` overwrites the `ok`
+    # field on every upsert, so it can't answer "when was this miner
+    # last successful." Drives the alert evaluator's `offline` rule.
+    def last_ok_at_per_miner
+      pipeline = [
+        { '$match' => { 'meta.command' => 'poll', 'meta.metric' => 'ok', 'v' => 1.0 } },
+        { '$sort'  => { 'ts' => -1 } },
+        { '$group' => { '_id' => '$meta.miner', 'ts' => { '$first' => '$ts' } } }
+      ]
+      Sample.collection.aggregate(pipeline).each_with_object({}) do |doc, acc|
+        acc[doc['_id']] = doc['ts']
+      end
+    end
+
+    # Returns { miner_id => ts (Time) } mapping each miner to the
+    # timestamp of its earliest poll sample (any status). Fallback
+    # reference for the offline rule when a miner has never had a
+    # successful poll — gives a finite, serializable "seconds since
+    # we first saw this miner" rather than infinity.
+    def first_poll_at_per_miner
+      pipeline = [
+        { '$match' => { 'meta.command' => 'poll', 'meta.metric' => 'ok' } },
+        { '$sort'  => { 'ts' => 1 } },
+        { '$group' => { '_id' => '$meta.miner', 'ts' => { '$first' => '$ts' } } }
+      ]
+      Sample.collection.aggregate(pipeline).each_with_object({}) do |doc, acc|
+        acc[doc['_id']] = doc['ts']
+      end
+    end
+
     def hashrate(miner: nil, since: nil, until_: nil)
       since  ||= Time.now.utc - 3600
       until_ ||= Time.now.utc
