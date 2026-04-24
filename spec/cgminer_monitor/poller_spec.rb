@@ -225,6 +225,48 @@ RSpec.describe CgminerMonitor::Poller do
       poller.poll_once
       expect(poller.polls_ok).to eq 2
     end
+
+    it 'invokes the alert evaluator once per poll with the tick timestamp' do
+      evaluator = instance_double(CgminerMonitor::AlertEvaluator, evaluate: nil)
+      custom_poller = described_class.new(config, miner_pool: miner_pool, alert_evaluator: evaluator)
+      custom_poller.poll_once
+      expect(evaluator).to have_received(:evaluate).with(kind_of(Time)).once
+    end
+
+    it 'invokes the evaluator AFTER samples and snapshots are persisted' do
+      # Ordering invariant for the offline rule: evaluator reads the
+      # poll/ok sample this tick just wrote. A future refactor that
+      # moved the evaluator call before write_samples/write_snapshots
+      # would silently break that.
+      seen_sample_count = nil
+      seen_snapshot_count = nil
+      evaluator = instance_double(CgminerMonitor::AlertEvaluator)
+      allow(evaluator).to receive(:evaluate) do
+        seen_sample_count = CgminerMonitor::Sample.count
+        seen_snapshot_count = CgminerMonitor::Snapshot.count
+      end
+
+      custom_poller = described_class.new(config, miner_pool: miner_pool, alert_evaluator: evaluator)
+      custom_poller.poll_once
+
+      expect(seen_sample_count).to be_positive
+      expect(seen_snapshot_count).to be_positive
+    end
+
+    it 'swallows evaluator exceptions and logs alert.evaluator_error' do
+      broken = instance_double(CgminerMonitor::AlertEvaluator)
+      allow(broken).to receive(:evaluate).and_raise(StandardError, 'boom')
+      custom_poller = described_class.new(config, miner_pool: miner_pool, alert_evaluator: broken)
+
+      log = StringIO.new
+      CgminerMonitor::Logger.output = log
+      CgminerMonitor::Logger.level = 'error'
+
+      expect { custom_poller.poll_once }.not_to raise_error
+
+      events = log.string.lines.map { |l| JSON.parse(l) }.map { |l| l['event'] }
+      expect(events).to include('alert.evaluator_error')
+    end
   end
 
   describe 'failed miner poll' do

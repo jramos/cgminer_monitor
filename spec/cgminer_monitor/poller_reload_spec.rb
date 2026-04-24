@@ -11,7 +11,8 @@ RSpec.describe CgminerMonitor::Poller, '#reload!' do
     instance_double(CgminerMonitor::Config,
                     miners_file: path,
                     interval: 60,
-                    shutdown_timeout: 5)
+                    shutdown_timeout: 5,
+                    alerts_enabled: false)
   end
 
   before { File.write(path, "- host: 10.0.0.1\n  port: 4028\n") }
