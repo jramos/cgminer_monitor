@@ -12,9 +12,10 @@ module CgminerMonitor
               'temperature_above' => 'C',
               'offline' => 'seconds' }.freeze
 
-    def initialize(config, webhook_client: nil)
-      @config         = config
-      @webhook_client = webhook_client || default_webhook_client(config)
+    def initialize(config, webhook_client: nil, restart_schedule_client: nil)
+      @config                  = config
+      @webhook_client          = webhook_client || default_webhook_client(config)
+      @restart_schedule_client = restart_schedule_client
     end
 
     def evaluate(now)
@@ -172,6 +173,19 @@ module CgminerMonitor
       first_at = SampleQuery.first_poll_at_per_miner
       SnapshotQuery.miners.each do |entry|
         miner = entry[:miner]
+
+        # Read-side gate: when the manager has the miner in its
+        # restart-window, suppress this miner's offline rule for this
+        # tick so the nightly restart doesn't page on its way down.
+        # Schedule lookup is fail-open (returns false on fetch failure),
+        # so a manager outage doesn't blanket-suppress real outages.
+        if @restart_schedule_client&.in_restart_window?(miner, now)
+          readings[miner]['offline'] = nil
+          Logger.info(event: 'alert.suppressed_during_restart_window',
+                      miner: miner, rule: 'offline')
+          next
+        end
+
         reference = last_ok[miner] || first_at[miner]
         readings[miner]['offline'] = reference ? (now - reference).to_f : 0.0
       end
