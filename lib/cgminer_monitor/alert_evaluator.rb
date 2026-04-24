@@ -46,7 +46,7 @@ module CgminerMonitor
       return if threshold.nil?
 
       violating = violates?(rule, observed, threshold)
-      state_doc = AlertState.where(_id: "#{miner}|#{rule}").first
+      state_doc = AlertState.where(_id: AlertState.composite_id(miner, rule)).first
 
       if violating
         handle_violating(miner: miner, rule: rule, observed: observed,
@@ -99,13 +99,13 @@ module CgminerMonitor
 
     def upsert_state(miner:, rule:, observed:, threshold:, state:,
                      last_fired_at:, last_transition_at:)
-      doc = AlertState.find_or_initialize_by(_id: "#{miner}|#{rule}")
+      doc = AlertState.find_or_initialize_by(_id: AlertState.composite_id(miner, rule))
       doc.assign_attributes(miner: miner, rule: rule, state: state,
                             threshold: threshold, last_observed: observed,
                             last_fired_at: last_fired_at,
                             last_transition_at: last_transition_at)
       doc.save!
-    rescue Mongo::Error, Mongoid::Errors::MongoidError => e
+    rescue Mongo::Error => e
       Logger.error(event: 'alert.state_write_failed', miner: miner, rule: rule,
                    error: e.class.to_s, message: e.message)
     end
