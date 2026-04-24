@@ -16,10 +16,11 @@
 | "what is this project?" / stack / file tree / module graph | [`codebase_info.md`](codebase_info.md) |
 | two-thread execution model / signal-handler dance / graceful shutdown / why things are shaped this way | [`architecture.md`](architecture.md) |
 | what each class/module does / responsibilities / where to find X | [`components.md`](components.md) |
-| HTTP API contracts / CLI exit codes / env-var table / `miners.yml` schema / structured-log schema | [`interfaces.md`](interfaces.md) |
-| MongoDB collection shapes / `Sample`/`Snapshot` fields / `Config` invariants / error hierarchy | [`data_models.md`](data_models.md) |
-| startup / polling loop / HTTP request lifecycle / test harness / release process | [`workflows.md`](workflows.md) |
-| runtime + dev deps / Ruby + Mongo version floors / CI matrix | [`dependencies.md`](dependencies.md) |
+| HTTP API contracts / CLI exit codes / env-var table (incl. `CGMINER_MONITOR_ALERTS_*`) / `miners.yml` schema / structured-log schema | [`interfaces.md`](interfaces.md) |
+| MongoDB collection shapes / `Sample`/`Snapshot`/`alert_states` fields / `Config` invariants / error hierarchy | [`data_models.md`](data_models.md) |
+| startup / polling loop / alert evaluation flow / HTTP request lifecycle / test harness / release process | [`workflows.md`](workflows.md) |
+| runtime + dev deps (incl. stdlib `Net::HTTP` for webhooks, `webmock` for alert specs) / Ruby + Mongo version floors / CI matrix | [`dependencies.md`](dependencies.md) |
+| structured log event catalog / reserved namespaces (`poll.*`, `alert.*`, `http.*`, …) / standard keys | [`log_schema.md`](log_schema.md) |
 | known gaps, inconsistencies, caveats in the docs themselves / cleanup recommendations | [`review_notes.md`](review_notes.md) |
 
 ## Document summaries
@@ -42,6 +43,9 @@
 ### [`workflows.md`](workflows.md)
 **Purpose:** Sequence diagrams and step-by-step flows. Startup, polling, request handling, graceful shutdown. Dev test workflow (unit, integration, openapi-check). Docker Compose dev stack. Release process. **Read this to understand how code paths compose over time.**
 
+### [`log_schema.md`](log_schema.md)
+**Purpose:** Reserved namespaces and event catalog for the structured logger. Documents every event name, required vs optional keys, and the four "standard keys" (`rule`, `threshold`, `observed`, `unit`) added with the alerts feature. **Read this to find "what log lines does the app emit for X?" or before adding a new event.**
+
 ### [`dependencies.md`](dependencies.md)
 **Purpose:** Runtime deps (cgminer_api_client, mongoid, sinatra, puma, rack-cors) and dev deps. Ruby/Mongo version rationale. CI matrix (lint/test/integration/openapi-check jobs). Mongoid 9 ↔ BSON 6 constraint. **Read this for "can I add gem X?", "what Rubies does this support?", or "why is Mongoid pinned."**
 
@@ -60,6 +64,9 @@
 | "Can I run this with MongoDB 4.4?" | `dependencies.md` (Mongo version support) — no, time-series requires 5.0+ |
 | "What's the schema of the `/v2/graph_data/hashrate` response?" | `interfaces.md` (HTTP API → Graph data) |
 | "Where does cgminer's `\"Pool Rejected%\"` end up in Mongo?" | `data_models.md` (Sample meta shape) — `metric: "pool_rejected_pct"` |
+| "How do I wire up alerts to a Slack webhook?" | `README.md` (Alerts subsection, 8 env vars + Slack example) + `interfaces.md` (env-var table) |
+| "How does the offline-rule know when a miner last succeeded?" | `components.md` (AlertEvaluator) + `workflows.md` (alert evaluation) — it reads the `Sample` time-series, not `Snapshot`, because Snapshot overwrites `ok` on failure |
+| "Why did I get paged again while the miner is still below target?" | `log_schema.md` (`alert.fired` w/ cooldown) + `data_models.md` (`alert_states.last_fired_at`) — cooldown-gated re-fire |
 
 ## Maintenance note
 
