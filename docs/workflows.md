@@ -127,7 +127,7 @@ sequenceDiagram
 
 ## 2a. Alert evaluation (opt-in, end of each poll)
 
-Runs inside the poller thread, *after* `poll.complete` so the completion log's cadence stays clean for stall detection. Disabled by default; the evaluator early-returns when `alerts_enabled=false`.
+Runs inside the poller thread, *after* the samples and snapshots are persisted. That ordering is load-bearing: the `offline` rule keys on the `poll/ok=1.0` sample the current tick just wrote, and the other two rules read the freshly-upserted `latest_snapshot` docs. Emitted after `poll.complete` so fleet-level lifecycle events aren't interleaved with per-miner alert emissions. Disabled by default; the evaluator early-returns when `alerts_enabled=false`.
 
 ```mermaid
 sequenceDiagram

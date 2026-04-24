@@ -78,12 +78,12 @@ Mongo driver errors (`Mongo::Error`) and cgminer API errors (`CgminerApiClient::
 ### `CgminerMonitor::Config` (`Data.define`)
 **File:** `lib/cgminer_monitor/config.rb`
 
-Immutable 14-field value object built from ENV. Fields: `interval`, `retention_seconds`, `mongo_url`, `http_host`, `http_port`, `http_min_threads`, `http_max_threads`, `miners_file`, `log_format`, `log_level`, `cors_origins`, `shutdown_timeout`, `healthz_stale_multiplier`, `healthz_startup_grace_seconds`.
+Immutable 23-field value object built from ENV. Core fields: `interval`, `retention_seconds`, `mongo_url`, `http_host`, `http_port`, `http_min_threads`, `http_max_threads`, `miners_file`, `log_format`, `log_level`, `cors_origins`, `shutdown_timeout`, `healthz_stale_multiplier`, `healthz_startup_grace_seconds`, `pid_file`. Alerts fields (opt-in; all validated only when `alerts_enabled=true`): `alerts_enabled`, `alerts_webhook_url`, `alerts_webhook_format`, `alerts_hashrate_min_ghs`, `alerts_temperature_max_c`, `alerts_offline_after_seconds`, `alerts_cooldown_seconds`, `alerts_webhook_timeout_seconds`.
 
 Public surface:
 - `Config.from_env(env = ENV)` — build + validate in one call. Raises `ConfigError` on bad values.
 - `Config.current` — memoized `from_env` result for code paths that want a global handle (primarily `HttpApp`). `Config.reset!` clears the memo (tests only).
-- `#validate!` — runs sanity checks: `interval > 0`, `log_format ∈ {json, text}`, `miners_file` exists, `log_level ∈ {debug, info, warn, error}`.
+- `#validate!` — runs sanity checks: `interval > 0`, `log_format ∈ {json, text}`, `miners_file` exists, `log_level ∈ {debug, info, warn, error}`. When `alerts_enabled=true` delegates to a private `validate_alerts!` that also checks the webhook URL, format, timeouts, and at-least-one-threshold requirement.
 - `#public_attrs` — `to_h` with the mongo URL redacted (`mongodb://user:pass@host` → `mongodb://[REDACTED]@host`). Used by `doctor` output and supplies the redacted `mongo_url` value for the `server.start` log entry.
 
 Any constructor field that fails parsing surfaces as a `ConfigError` at boot time, which the CLI translates into exit `78` (`EX_CONFIG`).

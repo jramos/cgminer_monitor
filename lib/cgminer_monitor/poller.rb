@@ -42,10 +42,13 @@ module CgminerMonitor
                   polls_ok: @polls_ok,
                   polls_failed: @polls_failed)
 
-      # Evaluator runs AFTER poll.complete so the completion timestamp
-      # stays clean for stall-detection (healthz_stale_multiplier cadence
-      # checks depend on it). Evaluator emits its own alert.evaluation_complete
-      # for end-to-end timing.
+      # Evaluator runs AFTER the samples + snapshots are persisted so
+      # it always reads the just-written state (the offline rule keys
+      # on the poll/ok=1.0 sample this tick just wrote). Also runs
+      # after the poll.complete log so the fleet-level "poll finished"
+      # event isn't interleaved with per-miner alert emissions.
+      # Evaluator emits its own alert.evaluation_complete for
+      # end-to-end timing.
       run_alert_evaluator(now)
     rescue Mongo::Error => e
       increment_failed

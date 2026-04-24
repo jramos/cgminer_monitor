@@ -161,9 +161,17 @@ classDiagram
         +shutdown_timeout: Integer
         +healthz_stale_multiplier: Integer
         +healthz_startup_grace_seconds: Integer
+        +pid_file: String?
+        +alerts_enabled: Boolean
+        +alerts_webhook_url: String?
+        +alerts_webhook_format: String
+        +alerts_hashrate_min_ghs: Float?
+        +alerts_temperature_max_c: Float?
+        +alerts_offline_after_seconds: Integer?
+        +alerts_cooldown_seconds: Integer
+        +alerts_webhook_timeout_seconds: Integer
         +validate!() Config
         +public_attrs() Hash
-        +redact_mongo_url(url)
     }
 ```
 
@@ -172,6 +180,11 @@ classDiagram
 - `log_format ∈ {"json", "text"}`
 - `log_level ∈ {"debug", "info", "warn", "error"}`
 - `File.exist?(miners_file)`
+- When `alerts_enabled=true` (enforced by `validate_alerts!`):
+  - `alerts_webhook_url` present, parseable, scheme ∈ {"http","https"}, non-empty host
+  - `alerts_webhook_format ∈ {"generic","slack","discord"}`
+  - `alerts_cooldown_seconds > 0`, `alerts_webhook_timeout_seconds > 0`
+  - At least one of `alerts_hashrate_min_ghs` / `alerts_temperature_max_c` / `alerts_offline_after_seconds` is set
 
 **`public_attrs`** returns `to_h` with `mongo_url` redacted (`mongodb://user:pass@host` → `mongodb://[REDACTED]@host`). Used by `cgminer_monitor doctor`; also supplies the redacted `mongo_url` value emitted in the `server.start` structured-log entry.
 
