@@ -36,6 +36,5 @@ module CgminerMonitor
       snapshot = Snapshot.where(miner: miner).order_by(fetched_at: :desc).first
       snapshot&.fetched_at
     end
-
   end
 end

@@ -204,7 +204,7 @@ module CgminerMonitor
       devices = snapshot.response&.dig('DEVS')
       return nil unless devices.is_a?(Array)
 
-      temps = devices.select { |d| d.is_a?(Hash) }
+      temps = devices.grep(Hash)
                      .map { |d| Float(d['Temperature'] || d['temperature'], exception: false) }
                      .compact
       temps.empty? ? nil : temps.max

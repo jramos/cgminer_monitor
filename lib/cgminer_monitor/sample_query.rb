@@ -20,9 +20,7 @@ module CgminerMonitor
         { '$sort'  => { 'ts' => -1 } },
         { '$group' => { '_id' => '$meta.miner', 'ts' => { '$first' => '$ts' } } }
       ]
-      Sample.collection.aggregate(pipeline).each_with_object({}) do |doc, acc|
-        acc[doc['_id']] = doc['ts']
-      end
+      Sample.collection.aggregate(pipeline).to_h { |doc| [doc['_id'], doc['ts']] }
     end
 
     # Returns { miner_id => ts (Time) } mapping each miner to the
@@ -36,9 +34,7 @@ module CgminerMonitor
         { '$sort'  => { 'ts' => 1 } },
         { '$group' => { '_id' => '$meta.miner', 'ts' => { '$first' => '$ts' } } }
       ]
-      Sample.collection.aggregate(pipeline).each_with_object({}) do |doc, acc|
-        acc[doc['_id']] = doc['ts']
-      end
+      Sample.collection.aggregate(pipeline).to_h { |doc| [doc['_id'], doc['ts']] }
     end
 
     def hashrate(miner: nil, since: nil, until_: nil)

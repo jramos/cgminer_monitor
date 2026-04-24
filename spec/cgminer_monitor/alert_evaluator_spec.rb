@@ -310,16 +310,16 @@ RSpec.describe CgminerMonitor::AlertEvaluator do
     # Seeds a Snapshot (for the miners list) and a matching poll/ok
     # Sample row (which drives last_ok_at_per_miner). Mirrors the
     # Poller's write pattern: both collections get touched per tick.
-    def seed_poll(at:, ok: true)
+    def seed_poll(at_time:, ok: true)
       upsert_snapshot(miner: miner_id, command: 'summary', ok: ok,
                       response: ok ? { 'SUMMARY' => [{ 'GHS 5s' => 1000 }] } : nil,
-                      error: ok ? nil : 'refused', fetched_at: at)
+                      error: ok ? nil : 'refused', fetched_at: at_time)
       insert_samples(build_sample(miner: miner_id, command: 'poll', metric: 'ok',
-                                  value: ok ? 1.0 : 0.0, ts: at))
+                                  value: ok ? 1.0 : 0.0, ts: at_time))
     end
 
     context 'when last ok is older than threshold' do
-      before { seed_poll(at: now - 900, ok: true) }
+      before { seed_poll(at_time: now - 900, ok: true) }
 
       it 'fires offline' do
         evaluator.evaluate(now)
@@ -337,7 +337,7 @@ RSpec.describe CgminerMonitor::AlertEvaluator do
       before do
         # Poller behavior: every tick upserts the (miner, command) snapshot,
         # so fetched_at advances even when ok=false.
-        seed_poll(at: now - 900, ok: true)
+        seed_poll(at_time: now - 900, ok: true)
         upsert_snapshot(miner: miner_id, command: 'summary', ok: false,
                         error: 'refused', fetched_at: now - 5)
         insert_samples(build_sample(miner: miner_id, command: 'poll', metric: 'ok',
@@ -353,7 +353,7 @@ RSpec.describe CgminerMonitor::AlertEvaluator do
     end
 
     context 'when miner has never succeeded, only failed' do
-      before { seed_poll(at: now - 900, ok: false) }
+      before { seed_poll(at_time: now - 900, ok: false) }
 
       it 'fires offline with a finite observed value (falls back to first-ever poll sample)' do
         evaluator.evaluate(now)
@@ -364,7 +364,7 @@ RSpec.describe CgminerMonitor::AlertEvaluator do
     end
 
     context 'when latest poll is ok and recent' do
-      before { seed_poll(at: now - 30, ok: true) }
+      before { seed_poll(at_time: now - 30, ok: true) }
 
       it 'treats miner as not offline' do
         evaluator.evaluate(now)
@@ -376,22 +376,91 @@ RSpec.describe CgminerMonitor::AlertEvaluator do
     # N-1 / N / N+1 boundary (>=)
     context 'boundary around offline_after_seconds=600' do
       it 'does not fire at 599 seconds (below boundary)' do
-        seed_poll(at: now - 599, ok: true)
+        seed_poll(at_time: now - 599, ok: true)
         evaluator.evaluate(now)
         expect(CgminerMonitor::AlertState.find("#{miner_id}|offline").state).to eq 'ok'
       end
 
       it 'fires at exactly 600 seconds (boundary is inclusive via >=)' do
-        seed_poll(at: now - 600, ok: true)
+        seed_poll(at_time: now - 600, ok: true)
         evaluator.evaluate(now)
         expect(CgminerMonitor::AlertState.find("#{miner_id}|offline").state).to eq 'violating'
       end
 
       it 'fires at 601 seconds (above boundary)' do
-        seed_poll(at: now - 601, ok: true)
+        seed_poll(at_time: now - 601, ok: true)
         evaluator.evaluate(now)
         expect(CgminerMonitor::AlertState.find("#{miner_id}|offline").state).to eq 'violating'
       end
+    end
+  end
+
+  describe 'state persistence across evaluator instances (restart)' do
+    let(:config) { make_config('CGMINER_MONITOR_ALERTS_HASHRATE_MIN_GHS' => '1000') }
+
+    before do
+      upsert_snapshot(miner: miner_id, command: 'summary',
+                      response: { 'SUMMARY' => [{ 'GHS 5s' => 500 }] })
+    end
+
+    it 'resumes a violating state from Mongo and re-fires after cooldown' do
+      # Seed state as if a prior monitor process saved it before restart.
+      CgminerMonitor::AlertState.create!(miner: miner_id, rule: 'hashrate_below',
+                                         state: 'violating', threshold: 1000.0,
+                                         last_observed: 500.0,
+                                         last_fired_at: now - 400,
+                                         last_transition_at: now - 600)
+
+      # Fresh evaluator instance — mimics "new monitor process after restart."
+      fresh = described_class.new(config, webhook_client: webhook_client)
+      fresh.evaluate(now)
+
+      expect(webhook_client).to have_received(:fire).with(hash_including(event: 'alert.fired'))
+      state = CgminerMonitor::AlertState.find("#{miner_id}|hashrate_below")
+      expect(state.last_fired_at).to be_within(1).of(now)
+    end
+
+    it 'does not re-fire on restart when cooldown has not yet elapsed' do
+      CgminerMonitor::AlertState.create!(miner: miner_id, rule: 'hashrate_below',
+                                         state: 'violating', threshold: 1000.0,
+                                         last_observed: 500.0,
+                                         last_fired_at: now - 60,
+                                         last_transition_at: now - 120)
+
+      fresh = described_class.new(config, webhook_client: webhook_client)
+      fresh.evaluate(now)
+
+      expect(webhook_client).not_to have_received(:fire)
+    end
+  end
+
+  describe 'partial-rules configuration' do
+    let(:config) do
+      # Two rules enabled (hashrate + temperature), offline threshold unset.
+      make_config('CGMINER_MONITOR_ALERTS_HASHRATE_MIN_GHS' => '1000',
+                  'CGMINER_MONITOR_ALERTS_TEMPERATURE_MAX_C' => '85')
+    end
+
+    before do
+      upsert_snapshot(miner: miner_id, command: 'summary',
+                      response: { 'SUMMARY' => [{ 'GHS 5s' => 500 }] })
+      upsert_snapshot(miner: miner_id, command: 'devs',
+                      response: { 'DEVS' => [{ 'Temperature' => 90 }] })
+    end
+
+    it 'evaluates only the configured rules; the unset rule is absent from state' do
+      evaluator.evaluate(now)
+
+      expect(CgminerMonitor::AlertState.where(_id: "#{miner_id}|hashrate_below").first).not_to be_nil
+      expect(CgminerMonitor::AlertState.where(_id: "#{miner_id}|temperature_above").first).not_to be_nil
+      expect(CgminerMonitor::AlertState.where(_id: "#{miner_id}|offline").first).to be_nil
+    end
+
+    it 'does not issue the Snapshot query for the disabled rule' do
+      # Expect devs + summary Snapshot.where(command: X, ok: true) but NOT SnapshotQuery.miners
+      # (which is only invoked to drive offline readings).
+      expect(CgminerMonitor::SnapshotQuery).not_to receive(:miners)
+      evaluator.evaluate(now)
     end
   end
 

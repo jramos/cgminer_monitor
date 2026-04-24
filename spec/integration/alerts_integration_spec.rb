@@ -137,7 +137,7 @@ RSpec.describe 'Alerts integration', :integration do
 
     it 'fires offline after repeated Poller failures even though Snapshot.fetched_at keeps moving' do
       poller = CgminerMonitor::Poller.new(offline_config, miner_pool: miner_pool,
-                                           alert_evaluator: CgminerMonitor::AlertEvaluator.new(offline_config))
+                                                          alert_evaluator: CgminerMonitor::AlertEvaluator.new(offline_config))
 
       # Seed history: one ok poll Sample 120s back, plus the matching
       # ok snapshot. "Last ok" is now -120s, well over the 60s threshold.
