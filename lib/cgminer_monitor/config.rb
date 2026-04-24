@@ -22,7 +22,9 @@ module CgminerMonitor
     :alerts_temperature_max_c,
     :alerts_offline_after_seconds,
     :alerts_cooldown_seconds,
-    :alerts_webhook_timeout_seconds
+    :alerts_webhook_timeout_seconds,
+    :restart_schedule_url,
+    :restart_window_grace_seconds
   ) do
     def validate!
       raise ConfigError, "interval must be > 0" unless interval.positive?
@@ -31,6 +33,7 @@ module CgminerMonitor
       raise ConfigError, "invalid log_level" unless %w[debug info warn error].include?(log_level)
 
       validate_alerts! if alerts_enabled
+      validate_restart_window!
 
       self
     end
@@ -75,6 +78,19 @@ module CgminerMonitor
     def redact_mongo_url(url)
       url.to_s.sub(%r{://[^@]+@}, "://[REDACTED]@")
     end
+
+    def validate_restart_window!
+      return if restart_schedule_url.nil?
+
+      uri = begin
+        URI.parse(restart_schedule_url)
+      rescue URI::InvalidURIError
+        raise ConfigError, "restart_schedule_url is not a valid URL: #{restart_schedule_url.inspect}"
+      end
+      raise ConfigError, "restart_schedule_url scheme must be http or https" unless %w[http https].include?(uri.scheme)
+      raise ConfigError, "restart_schedule_url must include a host" if uri.host.to_s.empty?
+      raise ConfigError, "restart_window_grace_seconds must be > 0" unless restart_window_grace_seconds.positive?
+    end
   end
 
   class << Config
@@ -103,7 +119,9 @@ module CgminerMonitor
         alerts_temperature_max_c: parse_optional_float(env, "CGMINER_MONITOR_ALERTS_TEMPERATURE_MAX_C"),
         alerts_offline_after_seconds: parse_optional_int(env, "CGMINER_MONITOR_ALERTS_OFFLINE_AFTER_SECONDS"),
         alerts_cooldown_seconds: parse_int(env, "CGMINER_MONITOR_ALERTS_COOLDOWN_SECONDS", "300"),
-        alerts_webhook_timeout_seconds: parse_int(env, "CGMINER_MONITOR_ALERTS_WEBHOOK_TIMEOUT_SECONDS", "2")
+        alerts_webhook_timeout_seconds: parse_int(env, "CGMINER_MONITOR_ALERTS_WEBHOOK_TIMEOUT_SECONDS", "2"),
+        restart_schedule_url: env["CGMINER_MONITOR_RESTART_SCHEDULE_URL"],
+        restart_window_grace_seconds: parse_int(env, "CGMINER_MONITOR_RESTART_WINDOW_GRACE_SECONDS", "300")
       ).validate!
     end
 
