@@ -79,6 +79,7 @@ module CgminerMonitor
     end
 
     configure do
+      use CgminerMonitor::RequestId
       use Rack::Cors do
         allow do
           cors = Config.current.cors_origins
@@ -93,7 +94,20 @@ module CgminerMonitor
     end
 
     before do
+      @request_id = request.env[CgminerMonitor::RequestId::ENV_KEY]
+      @started_at = Time.now
       content_type :json
+    end
+
+    after do
+      Logger.info(
+        event: 'http.request',
+        request_id: @request_id,
+        method: request.request_method,
+        path: request.path_info,
+        status: response.status,
+        duration_ms: ((Time.now - @started_at) * 1000).round
+      )
     end
 
     # --- Health ---
@@ -244,8 +258,11 @@ module CgminerMonitor
 
     error do
       err = env['sinatra.error']
-      Logger.error(event: 'http.unhandled_error', error: err.class.to_s,
-                   message: err.message, backtrace: err.backtrace&.first(10))
+      Logger.error(event: 'http.unhandled_error',
+                   request_id: env[CgminerMonitor::RequestId::ENV_KEY],
+                   error: err.class.to_s,
+                   message: err.message,
+                   backtrace: err.backtrace&.first(10))
       content_type :json
       status 500
       JSON.generate({ error: 'internal', code: 'internal' })

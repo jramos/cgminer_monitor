@@ -16,6 +16,8 @@ paths:
     get:
       operationId: getHealthz
       summary: Liveness/readiness check
+      parameters:
+        - $ref: '#/components/parameters/XCgminerRequestId'
       responses:
         "200":
           description: Healthy or starting
@@ -38,6 +40,8 @@ paths:
     get:
       operationId: getMetrics
       summary: Prometheus metrics endpoint
+      parameters:
+        - $ref: '#/components/parameters/XCgminerRequestId'
       responses:
         "200":
           description: Prometheus text exposition
@@ -50,6 +54,8 @@ paths:
     get:
       operationId: getMiners
       summary: List configured miners with current availability
+      parameters:
+        - $ref: '#/components/parameters/XCgminerRequestId'
       responses:
         "200":
           description: Miner list
@@ -79,6 +85,7 @@ paths:
           required: true
           schema: { type: string }
           description: "host:port identifier"
+        - $ref: '#/components/parameters/XCgminerRequestId'
       responses:
         "200":
           description: Device snapshot
@@ -98,6 +105,7 @@ paths:
           in: path
           required: true
           schema: { type: string }
+        - $ref: '#/components/parameters/XCgminerRequestId'
       responses:
         "200":
           description: Pool snapshot
@@ -117,6 +125,7 @@ paths:
           in: path
           required: true
           schema: { type: string }
+        - $ref: '#/components/parameters/XCgminerRequestId'
       responses:
         "200":
           description: Summary snapshot
@@ -136,6 +145,7 @@ paths:
           in: path
           required: true
           schema: { type: string }
+        - $ref: '#/components/parameters/XCgminerRequestId'
       responses:
         "200":
           description: Stats snapshot
@@ -164,6 +174,7 @@ paths:
           in: query
           required: false
           schema: { type: string }
+        - $ref: '#/components/parameters/XCgminerRequestId'
       responses:
         "200":
           description: Hashrate data
@@ -191,6 +202,7 @@ paths:
           in: query
           required: false
           schema: { type: string }
+        - $ref: '#/components/parameters/XCgminerRequestId'
       responses:
         "200":
           description: Temperature data
@@ -218,6 +230,7 @@ paths:
           in: query
           required: false
           schema: { type: string }
+        - $ref: '#/components/parameters/XCgminerRequestId'
       responses:
         "200":
           description: Availability data
@@ -245,6 +258,29 @@ paths:
           description: HTML documentation page
 
 components:
+  parameters:
+    XCgminerRequestId:
+      in: header
+      name: X-Cgminer-Request-Id
+      schema:
+        type: string
+        format: uuid
+      required: false
+      description: |
+        Optional UUID v4 carried for cross-repo trace correlation.
+        If supplied, monitor uses the inbound value as the
+        request_id field in structured logs (http.request,
+        http.unhandled_error) and echoes it in the response header.
+        If absent, monitor generates a fresh UUID. Used end-to-end
+        across cgminer_api_client → cgminer_monitor → cgminer_manager.
+
+  headers:
+    XCgminerRequestId:
+      schema:
+        type: string
+        format: uuid
+      description: Echoes the request's correlation UUID v4.
+
   schemas:
     SnapshotEnvelope:
       type: object

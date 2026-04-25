@@ -54,6 +54,45 @@ RSpec.describe CgminerMonitor::HttpApp do
     end
   end
 
+  describe 'request_id propagation' do
+    let(:captured) { [] }
+
+    before do
+      allow(CgminerMonitor::Logger).to receive(:info)  { |entry| captured << entry }
+      allow(CgminerMonitor::Logger).to receive(:error) { |entry| captured << entry }
+    end
+
+    it 'emits http.request with the inbound request_id' do
+      header 'X-Cgminer-Request-Id', 'inbound-trace-001'
+      get '/v2/healthz'
+      request_event = captured.find { |e| e[:event] == 'http.request' }
+      expect(request_event[:request_id]).to eq('inbound-trace-001')
+    end
+
+    it 'generates a fresh UUID for http.request when no inbound header' do
+      get '/v2/healthz'
+      request_event = captured.find { |e| e[:event] == 'http.request' }
+      expect(request_event[:request_id]).to match(/\A[0-9a-f-]{36}\z/)
+    end
+
+    it 'emits http.unhandled_error with request_id when a route raises' do
+      # Force a crash in /v2/miners by stubbing the configured_miners
+      # helper to raise. Crash must surface request_id in the error log.
+      allow_any_instance_of(described_class).to receive(:configured_miners)
+        .and_raise(StandardError, 'boom')
+      header 'X-Cgminer-Request-Id', 'crash-trace-002'
+      get '/v2/miners'
+      error_event = captured.find { |e| e[:event] == 'http.unhandled_error' }
+      expect(error_event[:request_id]).to eq('crash-trace-002')
+    end
+
+    it 'echoes X-Cgminer-Request-Id in the response header' do
+      header 'X-Cgminer-Request-Id', 'echo-trace-003'
+      get '/v2/healthz'
+      expect(last_response.headers['X-Cgminer-Request-Id']).to eq('echo-trace-003')
+    end
+  end
+
   describe 'fail-loud guard on unconfigured HttpApp' do
     # A future refactor that swapped the `set :configured_miners, nil`
     # default to `[]` or equivalent would make /v2/miners silently
