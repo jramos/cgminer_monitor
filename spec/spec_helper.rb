@@ -15,6 +15,7 @@ require 'cgminer_monitor'
 # their own `before` blocks.
 
 # Load all support files (mongo_helper, etc.)
+require 'cgminer_test_support'
 Dir[File.expand_path('support/**/*.rb', __dir__)].each { |f| require f }
 
 RSpec.configure do |config|
