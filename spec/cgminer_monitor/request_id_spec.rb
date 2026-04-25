@@ -15,7 +15,7 @@ describe CgminerMonitor::RequestId do
 
     it 'echoes the value in the response header' do
       env = { 'HTTP_X_CGMINER_REQUEST_ID' => 'a1b2c3d4-0000-0000-0000-000000000000' }
-      _, headers, _ = middleware.call(env)
+      _, headers, = middleware.call(env)
       expect(headers['X-Cgminer-Request-Id']).to eq('a1b2c3d4-0000-0000-0000-000000000000')
     end
   end
@@ -47,7 +47,7 @@ describe CgminerMonitor::RequestId do
       # Rack and Puma sanitize CR/LF before the middleware sees it, but
       # belt-and-braces — confirm no FakeHeader appears in our response.
       env = { 'HTTP_X_CGMINER_REQUEST_ID' => "x\r\nFakeHeader: y" }
-      _, headers, _ = middleware.call(env)
+      _, headers, = middleware.call(env)
       expect(headers).not_to have_key('FakeHeader')
     end
   end
