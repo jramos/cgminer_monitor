@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Test-support code (FakeCgminer, CgminerFixtures) extracted to the
+  shared `cgminer_test_support` gem. `spec/support/mongo_helper.rb`
+  remains repo-specific and unchanged. Spec references updated to
+  `CgminerTestSupport::FakeCgminer` /
+  `CgminerTestSupport::Fixtures::*`.
+
 ### Added
 - **Read-side suppression of `offline` alerts during a scheduled restart**
   (`lib/cgminer_monitor/restart_schedule_client.rb`). When
