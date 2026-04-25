@@ -17,8 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `admin.auth_misconfigured`, `http.request`, `http.500`,
   `http.unhandled_error`, `monitor.call`, `monitor.call.failed`,
   `rate_limit.exceeded` (was previously documented only for
-  `admin.command` / `admin.result`). Implementations follow in
-  `cgminer_monitor` v1.3.0 and `cgminer_manager` v1.6.0 — schema is a
+  `admin.command` / `admin.result`). Implementations follow in upcoming
+  `cgminer_monitor` and `cgminer_manager` releases — schema is a
   forward-looking contract until then.
 - Test-support code (FakeCgminer, CgminerFixtures) extracted to the
   shared `cgminer_test_support` gem. `spec/support/mongo_helper.rb`

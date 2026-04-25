@@ -88,7 +88,7 @@ Keys that appear across multiple events are named consistently. When you add a n
 - Manager generates `request_id` for every inbound HTTP request via Rack middleware sitting above `RateLimiter` and `AdminAuth`. Stashed on `env['cgminer_manager.request_id']`.
 - Monitor reads `HTTP_X_CGMINER_REQUEST_ID` from inbound requests; if absent (e.g., direct `curl`, Prometheus scraper), generates its own UUID. Stashed on `env['cgminer_monitor.request_id']`.
 - Manager's `MonitorClient` injects `X-Cgminer-Request-Id` on every outbound HTTP call to monitor.
-- Manager's `FleetBuilders` builds per-request `Miner` instances with a closure-captured `on_wire` callback; api_client's wire telemetry surfaces as `cgminer.wire` log events tagged with the request_id (debug level — opt in via `CGMINER_MANAGER_LOG_LEVEL=debug` to avoid the ~100-200 events per fan-out at info volume).
+- Manager's `FleetBuilders` builds per-request `Miner` instances with a closure-captured `on_wire` callback; api_client's wire telemetry surfaces as `cgminer.wire` log events tagged with the request_id (debug level — opt in via `LOG_LEVEL=debug` to avoid the ~100-200 events per fan-out at info volume).
 
 **Reserved-name discipline.** The header is `X-Cgminer-Request-Id` (canonical casing, but HTTP is case-insensitive). Don't introduce alternative names (`X-Trace-Id`, `X-Correlation-Id`).
 
@@ -144,11 +144,11 @@ Organized alphabetically within namespace. "Required" columns list keys beyond t
 
 ### `cgminer.*` (cgminer_manager)
 
-Manager's per-command wire telemetry, emitted at debug level (opt-in via `CGMINER_MANAGER_LOG_LEVEL=debug`). Closure-captured `request_id` flows through every event so a single value recovers the full causal chain across an admin POST → fan-out → cgminer round-trip.
+Manager's per-command wire telemetry, emitted at debug level (opt-in via `LOG_LEVEL=debug`). Closure-captured `request_id` flows through every event so a single value recovers the full causal chain across an admin POST → fan-out → cgminer round-trip.
 
 | Event | Level | Emitter | Required keys | Optional |
 |-------|-------|---------|---------------|----------|
-| `cgminer.wire` | debug | `FleetBuilders.build_wire_logger` (closure passed as `on_wire:` to per-request `CgminerApiClient::Miner` instances) | `request_id`, `direction`, `miner`, `payload` | |
+| `cgminer.wire` | debug | `FleetBuilders.build_wire_logger` (closure passed as `on_wire:` to per-request `CgminerApiClient::Miner` instances) | `request_id`, `direction`, `miner`, `payload` | `duration_ms` (response only — closure-computed delta from request `Time.now`), `bytes` (payload length) |
 
 ### `alert.*` (cgminer_monitor)
 
