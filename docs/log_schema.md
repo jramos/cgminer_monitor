@@ -79,6 +79,28 @@ Keys that appear across multiple events are named consistently. When you add a n
 
 **Convention:** scalar `miner:` for a rig id (string `"host:port"`); plural `miners:` for a count (integer). Reserved — don't reintroduce `miner_id:` or use `miner:` for an array.
 
+## Correlation
+
+`request_id` (UUID v4) is generated at the edge of every HTTP request in the manager and the monitor and propagated end-to-end so a single value recovers the full causal chain across all three repos.
+
+**Origin rules:**
+
+- Manager generates `request_id` for every inbound HTTP request via Rack middleware sitting above `RateLimiter` and `AdminAuth`. Stashed on `env['cgminer_manager.request_id']`.
+- Monitor reads `HTTP_X_CGMINER_REQUEST_ID` from inbound requests; if absent (e.g., direct `curl`, Prometheus scraper), generates its own UUID. Stashed on `env['cgminer_monitor.request_id']`.
+- Manager's `MonitorClient` injects `X-Cgminer-Request-Id` on every outbound HTTP call to monitor.
+- Manager's `FleetBuilders` builds per-request `Miner` instances with a closure-captured `on_wire` callback; api_client's wire telemetry surfaces as `cgminer.wire` log events tagged with the request_id (debug level — opt in via `CGMINER_MANAGER_LOG_LEVEL=debug` to avoid the ~100-200 events per fan-out at info volume).
+
+**Reserved-name discipline.** The header is `X-Cgminer-Request-Id` (canonical casing, but HTTP is case-insensitive). Don't introduce alternative names (`X-Trace-Id`, `X-Correlation-Id`).
+
+**Background work has no `request_id`.** Monitor's `poll.*`, `alert.*`, `mongo.*`, `migrate.*` events fire from the timer thread, not from inbound HTTP requests, so they don't carry the key. Forcing a value would dilute the dispatch signal.
+
+**Recipe — recover a full causal chain across both repos:**
+
+```sh
+jq -c 'select(.request_id == "a1b2c3d4-0000-0000-0000-000000000000")' \
+  manager.log monitor.log
+```
+
 ## Namespace reservations
 
 Namespaces partition the event space; each prefix is owned by exactly one repo except where noted.
@@ -97,7 +119,8 @@ Namespaces partition the event space; each prefix is owned by exactly one repo e
 - `admin.*` — admin surface (`admin.command`, `admin.result`, `admin.auth_failed`, `admin.auth_misconfigured`).
 - `rate_limit.*` — rate-limiter (`rate_limit.exceeded`).
 - `monitor.*` — **manager's client calls to the monitor service** (`monitor.call`, `monitor.call.failed`). This is intentional: the prefix names the *dependency*, not the emitter.
-- `http.*` — Rack request-level events (`http.request`, `http.500`, `http.unhandled_error`). Manager emits `http.request` + `http.500`; monitor emits `http.unhandled_error`. Technically shared via `http.unhandled_error`; see below.
+- `cgminer.*` — **manager's wire telemetry from api_client commands** (`cgminer.wire`). Same convention as `monitor.*`: the prefix names the *dependency* (cgminer firmware), not the emitter. Debug-level by default.
+- `http.*` — Rack request-level events (`http.request`, `http.500`, `http.unhandled_error`). Manager emits `http.request` + `http.500`; monitor emits `http.request` + `http.unhandled_error` (added in v1.3.0). Technically shared.
 
 **Shared (emitted by both):**
 
@@ -114,12 +137,21 @@ Organized alphabetically within namespace. "Required" columns list keys beyond t
 
 | Event | Level | Emitter | Required keys | Optional |
 |-------|-------|---------|---------------|----------|
-| `admin.auth_failed` | warn | `AdminAuth` | `reason`, `path`, `remote_ip`, `user_agent` | |
-| `admin.auth_misconfigured` | warn | `AdminAuth` | `path`, `remote_ip`, `user_agent` | |
+| `admin.auth_failed` | warn | `AdminAuth` | `request_id`, `reason`, `path`, `remote_ip`, `user_agent` | |
+| `admin.auth_misconfigured` | warn | `AdminAuth` | `request_id`, `path`, `remote_ip`, `user_agent` | |
 | `admin.command` | info | `HttpApp` via `AdminLogging.command_log_entry` | `request_id`, `user`, `remote_ip`, `user_agent`, `session_id_hash`, `command`, `scope` | `args` and other per-command extras |
 | `admin.result` | info | `HttpApp` via `AdminLogging.result_log_entry` | `request_id`, `command`, `scope`, `ok_count`, `failed_count`, `duration_ms` | |
 
+### `cgminer.*` (cgminer_manager)
+
+Manager's per-command wire telemetry, emitted at debug level (opt-in via `CGMINER_MANAGER_LOG_LEVEL=debug`). Closure-captured `request_id` flows through every event so a single value recovers the full causal chain across an admin POST → fan-out → cgminer round-trip.
+
+| Event | Level | Emitter | Required keys | Optional |
+|-------|-------|---------|---------------|----------|
+| `cgminer.wire` | debug | `FleetBuilders.build_wire_logger` (closure passed as `on_wire:` to per-request `CgminerApiClient::Miner` instances) | `request_id`, `direction`, `miner`, `payload` | |
+
 ### `alert.*` (cgminer_monitor)
+
 
 Opt-in per-miner threshold alerts. Wire-up: `CGMINER_MONITOR_ALERTS_ENABLED=true` plus a webhook URL and at least one of the three rule thresholds (`ALERTS_HASHRATE_MIN_GHS`, `ALERTS_TEMPERATURE_MAX_C`, `ALERTS_OFFLINE_AFTER_SECONDS`). See the repo README for the full env matrix.
 
@@ -142,9 +174,9 @@ Opt-in per-miner threshold alerts. Wire-up: `CGMINER_MONITOR_ALERTS_ENABLED=true
 
 | Event | Level | Emitter | Required keys | Optional |
 |-------|-------|---------|---------------|----------|
-| `http.request` | info | cgminer_manager `HttpApp` (after-filter) | `path`, `method`, `status`, `duration_ms` | |
-| `http.500` | error | cgminer_manager `HttpApp` | `error`, `message`, `backtrace` | |
-| `http.unhandled_error` | error | cgminer_monitor `HttpApp` | `error`, `message`, `backtrace` | |
+| `http.request` | info | both `HttpApp` (after-filter) | `request_id`, `path`, `method`, `status`, `duration_ms` | |
+| `http.500` | error | cgminer_manager `HttpApp` | `request_id`, `error`, `message`, `backtrace` | |
+| `http.unhandled_error` | error | cgminer_monitor `HttpApp` | `request_id`, `error`, `message`, `backtrace` | |
 
 ### `migrate.*` (cgminer_monitor)
 
@@ -156,8 +188,8 @@ Opt-in per-miner threshold alerts. Wire-up: `CGMINER_MONITOR_ALERTS_ENABLED=true
 
 | Event | Level | Emitter | Required keys | Optional |
 |-------|-------|---------|---------------|----------|
-| `monitor.call` | info | `MonitorClient` | `url`, `status`, `duration_ms` | |
-| `monitor.call.failed` | warn | `MonitorClient` | `url`, `error`, `message` | |
+| `monitor.call` | info | `MonitorClient` | `request_id`, `url`, `status`, `duration_ms` | |
+| `monitor.call.failed` | warn | `MonitorClient` | `request_id`, `url`, `error`, `message` | |
 
 ### `mongo.*` (cgminer_monitor)
 
@@ -183,7 +215,7 @@ Opt-in per-miner threshold alerts. Wire-up: `CGMINER_MONITOR_ALERTS_ENABLED=true
 
 | Event | Level | Emitter | Required keys | Optional |
 |-------|-------|---------|---------------|----------|
-| `rate_limit.exceeded` | warn | `RateLimiter` | `remote_ip`, `path`, `retry_after` | |
+| `rate_limit.exceeded` | warn | `RateLimiter` | `request_id`, `remote_ip`, `path`, `retry_after` | |
 
 ### `reload.*` (both; `reload.partial` monitor-only)
 
