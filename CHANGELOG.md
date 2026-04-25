@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Trace-id propagation** via `X-Cgminer-Request-Id` HTTP header.
+  New `CgminerMonitor::RequestId` Rack middleware extracts the
+  inbound value (or generates a fresh UUID v4) and stashes it on
+  `env['cgminer_monitor.request_id']`. New `http.request`
+  after-filter event logs `method`, `path`, `status`, `duration_ms`,
+  and `request_id`. `http.unhandled_error` also gains `request_id`.
+  Response always echoes `X-Cgminer-Request-Id`. OpenAPI 3.1 spec
+  documents the header on every `/v2/*` operation as optional
+  inbound, plus the response-header echo via
+  `components.headers.XCgminerRequestId`. Background events
+  (`poll.*`, `alert.*`, `mongo.*`) deliberately don't carry
+  `request_id` — they fire from the timer thread, not from HTTP
+  requests.
+
 ### Changed
 - **`docs/log_schema.md`** gains a Correlation subsection documenting
   `request_id` propagation across `cgminer_manager → cgminer_monitor` and
