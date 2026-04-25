@@ -37,7 +37,7 @@ Gem::Specification.new do |spec|
   spec.executables   = ["cgminer_monitor"]
   spec.require_paths = ["lib"]
 
-  spec.add_dependency "cgminer_api_client", "~> 0.3.0"
+  spec.add_dependency "cgminer_api_client", ">= 0.3", "< 0.5"
   spec.add_dependency "mongoid",            "~> 9.0"
   spec.add_dependency "puma",               ">= 6.0"
   spec.add_dependency "rack-cors",          "~> 2.0"

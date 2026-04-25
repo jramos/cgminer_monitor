@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] — 2026-04-25
+
+### Changed
+- **Widened `cgminer_api_client` constraint** from `~> 0.3.0` to
+  `>= 0.3, < 0.5` so consumers like `cgminer_manager` v1.6.0 (which
+  requires api_client v0.4.0 for the `on_wire:` kwarg) can pin both
+  monitor and api_client without a Bundler conflict. No code change.
+
 ### Added
 - **Trace-id propagation** via `X-Cgminer-Request-Id` HTTP header.
   New `CgminerMonitor::RequestId` Rack middleware extracts the
