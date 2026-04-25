@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`docs/log_schema.md`** gains a `code` standard key documenting the
+  six-symbol vocabulary that consumers (`cgminer_monitor`,
+  `cgminer_manager`) emit when wrapping rescued
+  `cgminer_api_client::ApiError` exceptions: `access_denied`,
+  `invalid_command`, `unknown`, `timeout`, `connection_error`,
+  `unexpected`. `poll.miner_failed` gains `code` as an optional
+  field; `admin.result` gains `failed_codes` as an optional
+  count-by-code map (e.g. `{"access_denied": 3}`). Implementations
+  follow in upcoming `cgminer_monitor` and `cgminer_manager`
+  releases — schema is a forward-looking contract until then.
+
 ## [1.3.2] — 2026-04-25
 
 ### Fixed

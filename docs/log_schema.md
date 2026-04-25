@@ -49,6 +49,7 @@ Keys that appear across multiple events are named consistently. When you add a n
 | `error`           | string           | `"Mongo::Error::OperationFailure"`          | exception class name via `e.class.to_s`. Never an exception object |
 | `message`         | string           | `"Connection refused"`                      | `e.message` |
 | `backtrace`       | array\<string\>  | `["file.rb:42 in …", …]`                    | first 10 frames by convention (`e.backtrace&.first(10)`) |
+| `code`            | string           | `"access_denied"`                           | symbolic error tag for log-side dispatch. Six values: `access_denied`, `invalid_command`, `unknown`, `timeout`, `connection_error`, `unexpected`. Maps from any `cgminer_api_client::ApiError` (including subclasses like `AccessDeniedError`) via `#code` (v0.4.0+) when the wire returned a structured error; consumers synthesize `timeout` for `CgminerApiClient::TimeoutError` and `connection_error` for `CgminerApiClient::ConnectionError`. **`unexpected` should not occur in practice** — its presence indicates a rescue widened upstream of the consumer (or a non-`CgminerApiClient` exception slipped through), and is worth surfacing as an alert. |
 | `remote_ip`       | string           | `"192.0.2.10"`                              | client IP (post-trust-walk for proxied requests) |
 | `user_agent`      | string           | `"curl/8.9.1"`                              | raw `HTTP_USER_AGENT` |
 | `user`            | string or `nil`  | `"admin"`                                   | admin-surface Basic-Auth username; `nil` when unauthenticated |
@@ -140,7 +141,7 @@ Organized alphabetically within namespace. "Required" columns list keys beyond t
 | `admin.auth_failed` | warn | `AdminAuth` | `request_id`, `reason`, `path`, `remote_ip`, `user_agent` | |
 | `admin.auth_misconfigured` | warn | `AdminAuth` | `request_id`, `path`, `remote_ip`, `user_agent` | |
 | `admin.command` | info | `HttpApp` via `AdminLogging.command_log_entry` | `request_id`, `user`, `remote_ip`, `user_agent`, `session_id_hash`, `command`, `scope` | `args` and other per-command extras |
-| `admin.result` | info | `HttpApp` via `AdminLogging.result_log_entry` | `request_id`, `command`, `scope`, `ok_count`, `failed_count`, `duration_ms` | |
+| `admin.result` | info | `HttpApp` via `AdminLogging.result_log_entry` | `request_id`, `command`, `scope`, `ok_count`, `failed_count`, `duration_ms` | `failed_codes` (count-by-`code`-value map of failed entries, e.g. `{"access_denied": 3, "unknown": 2}`; map keys obey the `code` standard-key vocabulary; empty `{}` when `failed_count == 0`) |
 
 ### `cgminer.*` (cgminer_manager)
 
@@ -202,7 +203,7 @@ Opt-in per-miner threshold alerts. Wire-up: `CGMINER_MONITOR_ALERTS_ENABLED=true
 | Event | Level | Emitter | Required keys | Optional |
 |-------|-------|---------|---------------|----------|
 | `poll.complete` | info | `Poller` | `samples_written`, `snapshots_upserted`, `polls_ok`, `polls_failed` | |
-| `poll.miner_failed` | warn | `Poller` | `miner`, `command`, `error` | |
+| `poll.miner_failed` | warn | `Poller` | `miner`, `command`, `error` | `code` |
 | `poll.unexpected_error` | error | `Poller` | `error`, `message`, `backtrace` | |
 
 ### `puma.*` (both)
