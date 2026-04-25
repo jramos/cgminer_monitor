@@ -94,20 +94,12 @@ module CgminerMonitor
     end
 
     before do
-      @request_id = request.env[CgminerMonitor::RequestId::ENV_KEY]
       @started_at = Time.now
       content_type :json
     end
 
     after do
-      Logger.info(
-        event: 'http.request',
-        request_id: @request_id,
-        method: request.request_method,
-        path: request.path_info,
-        status: response.status,
-        duration_ms: ((Time.now - @started_at) * 1000).round
-      )
+      log_http_request
     end
 
     # --- Health ---
@@ -265,10 +257,32 @@ module CgminerMonitor
                    backtrace: err.backtrace&.first(10))
       content_type :json
       status 500
-      JSON.generate({ error: 'internal', code: 'internal' })
+      body = JSON.generate({ error: 'internal', code: 'internal' })
+      # Sinatra skips after-filters on the error path. Emit http.request
+      # explicitly so dashboards counting "all requests" via this event
+      # don't undercount errors. Same shape as the success path; matches
+      # cgminer_manager's existing http.request after-filter behavior.
+      log_http_request
+      body
     end
 
     private
+
+    # Single source of truth for http.request emission. Called from the
+    # success path's after-filter and from the error block — Sinatra
+    # skips after-filters when error fires, so explicit emission from
+    # both paths gives a uniform "every request emits one http.request"
+    # invariant matching cgminer_manager's existing behavior.
+    def log_http_request
+      Logger.info(
+        event: 'http.request',
+        request_id: env[CgminerMonitor::RequestId::ENV_KEY],
+        method: request.request_method,
+        path: request.path,
+        status: response.status,
+        duration_ms: ((Time.now - @started_at) * 1000).round
+      )
+    end
 
     def build_health_check
       config = Config.current
