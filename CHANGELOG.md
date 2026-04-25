@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.2] — 2026-04-25
+
+### Fixed
+- **`Dockerfile`** — replaced removed-in-Bundler-4 `bundle binstubs
+  --path /usr/local/bundle/bin` with `bundle config set --local bin`
+  + plain `bundle binstubs --force`. Was silently OK on Bundler 2.x
+  (which deprecated but accepted `--path`); fails loudly on Bundler
+  4.x (which removes it). The `ruby:4.0-slim` base image ships
+  Bundler 4.x, so the Docker build was broken at HEAD. Surfaced by
+  `cgminer_manager`'s e2e workflow when it bumped its `monitor_ref`
+  pin from `master` (v1.2.0) to `v1.3.1` for trace-id propagation
+  assertions.
+
 ## [1.3.1] — 2026-04-25
 
 ### Changed
