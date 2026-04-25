@@ -91,6 +91,37 @@ RSpec.describe CgminerMonitor::HttpApp do
       get '/v2/healthz'
       expect(last_response.headers['X-Cgminer-Request-Id']).to eq('echo-trace-003')
     end
+
+    it 'echoes a freshly generated UUID in the response header when no inbound header' do
+      # Pins the path Prometheus scrapers + direct curls hit. A regression
+      # that breaks generated-UUID echo would silently break Phase 3's
+      # "we got back the same request_id we sent" verification.
+      get '/v2/healthz'
+      expect(last_response.headers['X-Cgminer-Request-Id']).to match(/\A[0-9a-f-]{36}\z/)
+    end
+
+    it 'echoes the request_id in the response header on the 500 error path' do
+      allow_any_instance_of(described_class).to receive(:configured_miners)
+        .and_raise(StandardError, 'boom')
+      header 'X-Cgminer-Request-Id', 'crash-echo-trace'
+      get '/v2/miners'
+      expect(last_response.status).to eq(500)
+      expect(last_response.headers['X-Cgminer-Request-Id']).to eq('crash-echo-trace')
+    end
+
+    it 'emits http.request with status 500 on the error path (matches cgminer_manager)' do
+      # Sinatra skips after-filters when error fires; without explicit
+      # emission from the error block, dashboards counting requests via
+      # http.request would undercount errors.
+      allow_any_instance_of(described_class).to receive(:configured_miners)
+        .and_raise(StandardError, 'boom')
+      header 'X-Cgminer-Request-Id', 'crash-request-trace'
+      get '/v2/miners'
+      request_event = captured.find { |e| e[:event] == 'http.request' }
+      expect(request_event).not_to be_nil
+      expect(request_event[:request_id]).to eq('crash-request-trace')
+      expect(request_event[:status]).to eq(500)
+    end
   end
 
   describe 'fail-loud guard on unconfigured HttpApp' do
