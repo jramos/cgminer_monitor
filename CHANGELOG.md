@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `:session_mismatch`, `:evicted`, `:not_found`). New
   `confirmation_token` standard-key row and a `reason` standard-key
   row covering its enum values. Doc-only schema reservation;
-  manager v1.7.0 implements.
+  implemented in `cgminer_manager` v1.7.0.
 
 ## [1.4.0] — 2026-04-25
 
