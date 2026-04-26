@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-04-26
+
+### Added
+- **`RestartScheduleClient#in_drain?(miner, now)`** — new sibling to
+  the existing `in_restart_window?` predicate. Reads `drained: true`
+  + `drained_at` (ISO8601 UTC) from the per-miner record served by
+  `cgminer_manager`'s `/api/v1/restart_schedules.json`. Defensive on
+  every field: `drained` must be exactly `true` and `drained_at`
+  must parse via `Time.iso8601`; either failing returns false
+  (fail-open, same posture as the restart-window check). Manager
+  v1.8.0 publishes the drain fields; older managers omit them and
+  this predicate returns false for every miner — no version
+  negotiation needed.
+- **`AlertEvaluator#populate_offline_readings`** consults the new
+  predicate alongside the existing restart-window check. When
+  either is true, the miner's `offline_seconds` atom nils for this
+  tick (suppressing the built-in `offline` rule AND any composite
+  that uses `offline_seconds`) and one
+  `alert.suppressed_during_restart_window` event emits per affected
+  rule with a new `cause:` Symbol field (`:restart_window` or
+  `:drain`). First-true predicate wins so a drained rig inside its
+  restart window logs `cause: :restart_window` (the
+  operationally-louder signal); both predicates falling through
+  means the offline rule fires normally. Single grep target, single
+  alerting integration; the new field is the discriminator instead
+  of a new event name.
+
 ### Changed
 - **`docs/log_schema.md`** reserves five new `admin.action_*` events
   for the destructive-command confirmation flow shipping in
@@ -18,6 +45,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `confirmation_token` standard-key row and a `reason` standard-key
   row covering its enum values. Doc-only schema reservation;
   implemented in `cgminer_manager` v1.7.0.
+- **`docs/log_schema.md`** reserves five new `drain.*` events for
+  the per-miner Drain / Resume flow shipping in `cgminer_manager`
+  v1.8.0: `drain.applied`, `drain.resumed`, `drain.failed`,
+  `drain.indeterminate`, `drain.auto_resume_giving_up`. The three
+  state-change events (`failed` / `resumed` / `indeterminate`) carry
+  a `cause:` Symbol discriminator (`:drain` / `:resume` /
+  `:auto_resume` plus `:operator` / `:auto_resume_orphan_cleared`
+  for `drain.resumed`) so all originating callers share one event
+  name. Existing `alert.suppressed_during_restart_window` event
+  gains an optional `cause:` field (`:restart_window` default,
+  `:drain` for the new path) so monitor's offline-alert suppression
+  is grep-discriminable by source. New `drained_at` and `cause`
+  standard-key rows. Doc-only schema reservation; implementation
+  follows in monitor v1.5.0 alongside the manager v1.8.0 release.
 
 ## [1.4.0] — 2026-04-25
 

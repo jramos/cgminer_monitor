@@ -82,6 +82,86 @@ RSpec.describe CgminerMonitor::RestartScheduleClient do
     end
   end
 
+  describe '#in_drain? (v1.5.0+)' do
+    let(:drained_payload) do
+      enabled_payload.merge(
+        'schedules' => [
+          enabled_payload['schedules'].first.merge(
+            'drained' => true,
+            'drained_at' => '2026-04-26T12:00:00.000Z',
+            'drained_by' => 'operator'
+          )
+        ]
+      )
+    end
+
+    let(:not_drained_payload) do
+      enabled_payload.merge(
+        'schedules' => [
+          enabled_payload['schedules'].first.merge('drained' => false, 'drained_at' => nil)
+        ]
+      )
+    end
+
+    let(:now) { Time.utc(2026, 4, 26, 12, 5, 0) }
+
+    it 'returns true for a drained miner' do
+      stub_request(:get, url).to_return(status: 200, body: JSON.generate(drained_payload))
+      expect(client.in_drain?('127.0.0.1:4028', now)).to be(true)
+    end
+
+    it 'returns false for a not-drained miner' do
+      stub_request(:get, url).to_return(status: 200, body: JSON.generate(not_drained_payload))
+      expect(client.in_drain?('127.0.0.1:4028', now)).to be(false)
+    end
+
+    it 'returns false when the drained field is absent (back-compat with pre-v1.8.0 manager)' do
+      stub_request(:get, url).to_return(status: 200, body: JSON.generate(enabled_payload))
+      expect(client.in_drain?('127.0.0.1:4028', now)).to be(false)
+    end
+
+    it 'returns false when drained is exactly true but drained_at is malformed' do
+      payload = enabled_payload.merge(
+        'schedules' => [enabled_payload['schedules'].first.merge('drained' => true,
+                                                                 'drained_at' => 'not-a-timestamp')]
+      )
+      stub_request(:get, url).to_return(status: 200, body: JSON.generate(payload))
+      expect(client.in_drain?('127.0.0.1:4028', now)).to be(false)
+    end
+
+    it 'returns false when drained is exactly true but drained_at is missing' do
+      payload = enabled_payload.merge(
+        'schedules' => [enabled_payload['schedules'].first.merge('drained' => true)]
+      )
+      stub_request(:get, url).to_return(status: 200, body: JSON.generate(payload))
+      expect(client.in_drain?('127.0.0.1:4028', now)).to be(false)
+    end
+
+    it 'returns false when drained is truthy-but-not-true (defensive — only exact `true` counts)' do
+      payload = enabled_payload.merge(
+        'schedules' => [enabled_payload['schedules'].first.merge('drained' => 'true',
+                                                                 'drained_at' => '2026-04-26T12:00:00Z')]
+      )
+      stub_request(:get, url).to_return(status: 200, body: JSON.generate(payload))
+      expect(client.in_drain?('127.0.0.1:4028', now)).to be(false)
+    end
+
+    it 'returns false for unknown miners' do
+      stub_request(:get, url).to_return(status: 200, body: JSON.generate(drained_payload))
+      expect(client.in_drain?('10.0.0.99:4028', now)).to be(false)
+    end
+
+    it 'fails open on manager fetch failure (returns false, not crash)' do
+      stub_request(:get, url).to_raise(Errno::ECONNREFUSED)
+      CgminerMonitor::Logger.output = StringIO.new
+      CgminerMonitor::Logger.level = 'error'
+      expect(client.in_drain?('127.0.0.1:4028', now)).to be(false)
+    ensure
+      CgminerMonitor::Logger.output = $stdout
+      CgminerMonitor::Logger.level = 'info'
+    end
+  end
+
   describe 'caching' do
     it 'does not re-hit the network within cache_seconds' do
       stub_request(:get, url).to_return(status: 200, body: JSON.generate(enabled_payload))

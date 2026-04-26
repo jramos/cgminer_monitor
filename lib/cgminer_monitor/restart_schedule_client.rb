@@ -44,6 +44,33 @@ module CgminerMonitor
       ((now_sod - start_sod) % 86_400) < @grace_seconds
     end
 
+    # Returns true iff the miner is currently drained per the manager's
+    # per-miner record (cgminer_manager v1.8.0+ Drain mode). Drain state
+    # is consumed verbatim from the schedule entry — auto-resume timeouts
+    # are enforced on the manager side, so monitor just reports what the
+    # manager last published. `now` is unused but accepted for API
+    # symmetry with `in_restart_window?` and to leave room for future
+    # drain-window semantics.
+    #
+    # Defensive on every field: `drained` must be exactly `true` (not
+    # truthy — a stray string would oscillate suppression on transient
+    # malformed entries); `drained_at` must be a parseable ISO8601
+    # string. Either failing returns false (fail-open, same posture as
+    # the restart-window check).
+    def in_drain?(miner, _now)
+      schedule = fetch[miner]
+      return false if schedule.nil?
+      return false unless schedule['drained'] == true
+
+      drained_at = schedule['drained_at']
+      return false unless drained_at.is_a?(String)
+
+      Time.iso8601(drained_at)
+      true
+    rescue ArgumentError
+      false
+    end
+
     private
 
     def fetch
