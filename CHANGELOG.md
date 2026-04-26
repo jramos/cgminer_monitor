@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`docs/log_schema.md`** reserves five new `admin.action_*` events
+  for the destructive-command confirmation flow shipping in
+  `cgminer_manager` v1.7.0: `admin.action_started`,
+  `admin.action_confirmed`, `admin.action_auto_confirmed`,
+  `admin.action_cancelled`, and `admin.action_rejected` (single
+  event with `reason:` Symbol discriminator covering `:expired`,
+  `:session_mismatch`, `:evicted`, `:not_found`). New
+  `confirmation_token` standard-key row and a `reason` standard-key
+  row covering its enum values. Doc-only schema reservation;
+  manager v1.7.0 implements.
+
 ## [1.4.0] — 2026-04-25
 
 ### Added

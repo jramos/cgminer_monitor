@@ -54,6 +54,8 @@ Keys that appear across multiple events are named consistently. When you add a n
 | `user_agent`      | string           | `"curl/8.9.1"`                              | raw `HTTP_USER_AGENT` |
 | `user`            | string or `nil`  | `"admin"`                                   | admin-surface Basic-Auth username; `nil` when unauthenticated |
 | `session_id_hash` | string           | `"a3f1e2d4b6c8"`                            | first 12 hex chars of `SHA256(session_id)`; never the raw session id |
+| `confirmation_token` | string        | UUID v4                                     | single-use 2-minute TTL token issued by the destructive-command confirmation flow (`cgminer_manager` v1.7.0+); appears on `admin.action_*` events and threads step 1 → step 2 of a two-phase POST |
+| `reason`          | string (Symbol)  | `"expired"` / `"session_mismatch"` / `"evicted"` / `"not_found"` / `"missing_credentials"` | enum-like discriminator on rejection-style events. Values vary per event (e.g. `admin.auth_failed.reason` is a different enum than `admin.action_rejected.reason`); each emit-site documents its set. |
 | `request_id`      | string           | UUID v4                                     | threads entry/exit events for a single admin POST |
 | `command`         | string           | `"version"`, `"addpool"`                    | cgminer verb or admin command name |
 | `scope`           | string           | `"all"`, `"rig-01"`, `"pool-0"`             | admin-command target selector |
@@ -145,6 +147,11 @@ Organized alphabetically within namespace. "Required" columns list keys beyond t
 | `admin.auth_misconfigured` | warn | `AdminAuth` | `request_id`, `path`, `remote_ip`, `user_agent` | |
 | `admin.command` | info | `HttpApp` via `AdminLogging.command_log_entry` | `request_id`, `user`, `remote_ip`, `user_agent`, `session_id_hash`, `command`, `scope` | `args` and other per-command extras |
 | `admin.result` | info | `HttpApp` via `AdminLogging.result_log_entry` | `request_id`, `command`, `scope`, `ok_count`, `failed_count`, `duration_ms` | `failed_codes` (count-by-`code`-value map of failed entries, e.g. `{"access_denied": 3, "unknown": 2}`; map keys obey the `code` standard-key vocabulary; empty `{}` when `failed_count == 0`) |
+| `admin.action_started` | info | `HttpApp` via `ConfirmationHelpers#issue_confirmation_token` (`cgminer_manager` v1.7.0+) | `request_id`, `confirmation_token`, `expires_at`, `command`, `scope`, `session_id_hash`, `remote_ip`, `user_agent` | `user`, `args` (subject to redaction for `manage_pools/add` actions where `args` becomes `"[REDACTED: pool credentials]"`) |
+| `admin.action_confirmed` | info | `HttpApp` (post `POST /manager/admin/confirm/:token`) | `request_id`, `confirmation_token`, `command`, `scope`, `session_id_hash`, `remote_ip`, `user_agent`, `started_age_ms` | `user`, `args` (same redaction rule) |
+| `admin.action_auto_confirmed` | info | `HttpApp` via `ConfirmationHelpers` (when `?auto_confirm=1` skips the dance) | `request_id`, `command`, `scope`, `session_id_hash`, `remote_ip`, `user_agent` | `user` |
+| `admin.action_cancelled` | info | `HttpApp` (post `DELETE /manager/admin/confirm/:token`) | `request_id`, `confirmation_token`, `command`, `scope`, `session_id_hash` | `user` |
+| `admin.action_rejected` | warn | `HttpApp` via `ConfirmationHelpers#reject_confirmation!` and `#log_eviction` | `request_id`, `confirmation_token`, `reason`, `session_id_hash` | `command`, `scope`, `user` (nil for `reason: :not_found` since the token's command/scope aren't recoverable). `reason` is one of `:expired`, `:session_mismatch`, `:evicted`, `:not_found` — single event with discriminator instead of one event per failure mode. |
 
 ### `cgminer.*` (cgminer_manager)
 
