@@ -4,6 +4,8 @@ require 'cgminer_api_client'
 require 'mongoid'
 
 require 'cgminer_monitor/errors'
+require 'cgminer_monitor/composite_rule'
+require 'cgminer_monitor/composite_rule_parser'
 require 'cgminer_monitor/config'
 require 'cgminer_monitor/logger'
 require 'cgminer_monitor/sample'
