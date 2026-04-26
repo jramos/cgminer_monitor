@@ -293,23 +293,27 @@ module CgminerMonitor
         miner = entry[:miner]
 
         # Read-side gate: when the manager has the miner in its
-        # restart-window, suppress this miner's offline_seconds atom
-        # for this tick so the nightly restart doesn't page on its
-        # way down. Both the built-in `offline` rule AND any composite
-        # that uses `offline_seconds` see nil and skip — composites
-        # via #evaluable?, built-ins via the `next if observed.nil?`
+        # restart-window OR drain state (v1.5.0+), suppress this
+        # miner's offline_seconds atom for this tick. Both the
+        # built-in `offline` rule AND any composite that uses
+        # `offline_seconds` see nil and skip — composites via
+        # #evaluable?, built-ins via the `next if observed.nil?`
         # gate in evaluate(). Schedule lookup is fail-open (returns
         # false on fetch failure), so a manager outage doesn't
         # blanket-suppress real outages.
-        if @restart_schedule_client&.in_restart_window?(miner, now)
+        #
+        # First-true predicate wins: restart_window is checked before
+        # drain so a drained rig that ALSO happens to be inside its
+        # nightly restart window logs `cause: :restart_window` (the
+        # operationally-louder signal). One suppression event per
+        # affected rule so composite-only deployments see their
+        # composite name, not a misleading hardcoded `rule: 'offline'`.
+        suppression_cause = suppression_cause_for(miner, now)
+        if suppression_cause
           atom_readings[miner]['offline_seconds'] = nil
-          # Emit one suppression log per rule that consumes the atom
-          # so a composite-only deployment doesn't see a misleading
-          # `rule: 'offline'` row referencing a built-in they didn't
-          # configure.
           rules_consuming_offline_atom.each do |rule|
             Logger.info(event: 'alert.suppressed_during_restart_window',
-                        miner: miner, rule: rule)
+                        miner: miner, rule: rule, cause: suppression_cause)
           end
           next
         end
@@ -317,6 +321,15 @@ module CgminerMonitor
         reference = last_ok[miner] || first_at[miner]
         atom_readings[miner]['offline_seconds'] = reference ? (now - reference).to_f : 0.0
       end
+    end
+
+    def suppression_cause_for(miner, now)
+      return nil unless @restart_schedule_client
+
+      return :restart_window if @restart_schedule_client.in_restart_window?(miner, now)
+      return :drain if @restart_schedule_client.in_drain?(miner, now)
+
+      nil
     end
 
     def default_webhook_client(config)

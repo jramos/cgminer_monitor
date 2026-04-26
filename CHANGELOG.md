@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-04-26
+
+### Added
+- **`RestartScheduleClient#in_drain?(miner, now)`** — new sibling to
+  the existing `in_restart_window?` predicate. Reads `drained: true`
+  + `drained_at` (ISO8601 UTC) from the per-miner record served by
+  `cgminer_manager`'s `/api/v1/restart_schedules.json`. Defensive on
+  every field: `drained` must be exactly `true` and `drained_at`
+  must parse via `Time.iso8601`; either failing returns false
+  (fail-open, same posture as the restart-window check). Manager
+  v1.8.0 publishes the drain fields; older managers omit them and
+  this predicate returns false for every miner — no version
+  negotiation needed.
+- **`AlertEvaluator#populate_offline_readings`** consults the new
+  predicate alongside the existing restart-window check. When
+  either is true, the miner's `offline_seconds` atom nils for this
+  tick (suppressing the built-in `offline` rule AND any composite
+  that uses `offline_seconds`) and one
+  `alert.suppressed_during_restart_window` event emits per affected
+  rule with a new `cause:` Symbol field (`:restart_window` or
+  `:drain`). First-true predicate wins so a drained rig inside its
+  restart window logs `cause: :restart_window` (the
+  operationally-louder signal); both predicates falling through
+  means the offline rule fires normally. Single grep target, single
+  alerting integration; the new field is the discriminator instead
+  of a new event name.
+
 ### Changed
 - **`docs/log_schema.md`** reserves five new `admin.action_*` events
   for the destructive-command confirmation flow shipping in

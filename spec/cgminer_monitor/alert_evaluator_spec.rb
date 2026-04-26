@@ -375,7 +375,8 @@ RSpec.describe CgminerMonitor::AlertEvaluator do
 
     context 'with a restart_schedule_client reporting the miner is in its window' do
       let(:restart_schedule_client) do
-        instance_double(CgminerMonitor::RestartScheduleClient, in_restart_window?: true)
+        instance_double(CgminerMonitor::RestartScheduleClient,
+                        in_restart_window?: true, in_drain?: false)
       end
       let(:evaluator) do
         described_class.new(config,
@@ -435,6 +436,8 @@ RSpec.describe CgminerMonitor::AlertEvaluator do
                                                .select { |l| l['event'] == 'alert.suppressed_during_restart_window' }
         rules = suppression_lines.map { |l| l['rule'] }
         expect(rules).to contain_exactly('offline', 'cold_dead')
+        # v1.5.0+: every suppression event carries a `cause:` discriminator.
+        expect(suppression_lines.map { |l| l['cause'] }).to all(eq('restart_window'))
       end
 
       it 'omits the built-in `offline` suppression row when only composites consume offline_seconds' do
@@ -460,9 +463,84 @@ RSpec.describe CgminerMonitor::AlertEvaluator do
       end
     end
 
+    context 'with a restart_schedule_client reporting the miner is in DRAIN (v1.5.0+)' do
+      let(:restart_schedule_client) do
+        instance_double(CgminerMonitor::RestartScheduleClient,
+                        in_restart_window?: false, in_drain?: true)
+      end
+      let(:evaluator) do
+        described_class.new(config,
+                            webhook_client: webhook_client,
+                            restart_schedule_client: restart_schedule_client)
+      end
+
+      before { seed_poll(at_time: now - 900, ok: true) }
+
+      it 'suppresses the offline rule with cause: :drain' do
+        log_io = StringIO.new
+        CgminerMonitor::Logger.output = log_io
+        CgminerMonitor::Logger.level = 'info'
+
+        evaluator.evaluate(now)
+
+        suppression_lines = log_io.string.lines.map { |l| JSON.parse(l) }
+                                               .select { |l| l['event'] == 'alert.suppressed_during_restart_window' }
+        expect(suppression_lines.map { |l| l['cause'] }).to all(eq('drain'))
+        expect(webhook_client).not_to have_received(:fire).with(hash_including(rule: 'offline'))
+      end
+
+      it 'emits one suppression line per rule consuming offline_seconds (built-in + composite)' do
+        log_io = StringIO.new
+        CgminerMonitor::Logger.output = log_io
+        CgminerMonitor::Logger.level = 'info'
+
+        composite_config = make_config(
+          'CGMINER_MONITOR_ALERTS_OFFLINE_AFTER_SECONDS' => '600',
+          'CGMINER_MONITOR_ALERTS_COMPOSITE_COLD_DEAD' => 'ghs_5s<100 & offline_seconds>60'
+        )
+        evaluator = described_class.new(composite_config,
+                                        webhook_client: webhook_client,
+                                        restart_schedule_client: restart_schedule_client)
+        evaluator.evaluate(now)
+
+        suppression_lines = log_io.string.lines.map { |l| JSON.parse(l) }
+                                               .select { |l| l['event'] == 'alert.suppressed_during_restart_window' }
+        rules = suppression_lines.map { |l| l['rule'] }
+        expect(rules).to contain_exactly('offline', 'cold_dead')
+        expect(suppression_lines.map { |l| l['cause'] }).to all(eq('drain'))
+      end
+    end
+
+    context 'with both in_restart_window? AND in_drain? returning true' do
+      let(:restart_schedule_client) do
+        instance_double(CgminerMonitor::RestartScheduleClient,
+                        in_restart_window?: true, in_drain?: true)
+      end
+      let(:evaluator) do
+        described_class.new(config,
+                            webhook_client: webhook_client,
+                            restart_schedule_client: restart_schedule_client)
+      end
+
+      before { seed_poll(at_time: now - 900, ok: true) }
+
+      it 'logs cause: :restart_window (first-true predicate wins)' do
+        log_io = StringIO.new
+        CgminerMonitor::Logger.output = log_io
+        CgminerMonitor::Logger.level = 'info'
+
+        evaluator.evaluate(now)
+
+        suppression_lines = log_io.string.lines.map { |l| JSON.parse(l) }
+                                               .select { |l| l['event'] == 'alert.suppressed_during_restart_window' }
+        expect(suppression_lines.map { |l| l['cause'] }).to all(eq('restart_window'))
+      end
+    end
+
     context 'with a restart_schedule_client reporting the miner is NOT in its window' do
       let(:restart_schedule_client) do
-        instance_double(CgminerMonitor::RestartScheduleClient, in_restart_window?: false)
+        instance_double(CgminerMonitor::RestartScheduleClient,
+                        in_restart_window?: false, in_drain?: false)
       end
       let(:evaluator) do
         described_class.new(config,
