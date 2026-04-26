@@ -7,6 +7,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-04-25
+
+### Added
+- **Composite alert rules** — combine multiple atomic-metric clauses
+  into a single named rule with **AND** semantics so a correlated
+  fault (e.g. low hashrate + high temperature = thermal-stressed
+  rig) fires one alert instead of two. Configure one composite per
+  ENV var:
+
+  ```bash
+  CGMINER_MONITOR_ALERTS_COMPOSITE_THERMAL_STRESS='ghs_5s<500 & temp_max>80'
+  ```
+
+  Grammar is deliberately tiny: `<metric> <op> <number>` clauses
+  joined by `&`, with allowed metrics `ghs_5s` / `temp_max` /
+  `offline_seconds` and allowed operators `<` / `>` / `<=` / `>=` /
+  `==`. At least 2 clauses required (single-clause composites
+  duplicate built-in rules). OR (`|`) is explicitly out of scope
+  for v1.4.0 and triggers a specific boot-time error.
+
+  Composites reuse the existing fired/resolved/cooldown lifecycle
+  and webhook sink. Boot validation aggregates every clause-level
+  problem and prefixes the originating ENV var name so the operator
+  knows which composite is broken without grepping.
+
+  A composite is **skipped** for the tick if any required atom
+  reading is missing (no relevant snapshot, restart-window
+  suppression on `offline_seconds`, etc.) — no state write, no
+  fire, no resolve. Protects against transient bad data silently
+  transitioning a real violating composite to `ok`. AND-resolution
+  semantic: composite resolves as soon as any clause stops
+  violating. Built-in + composite double-fire on the same
+  observation is intentional (operator opted into both).
+
+- **`code` field on `poll.miner_failed`** continues unchanged from
+  v1.3.3.
+
+### Changed
+- **`alert.fired` / `alert.resolved` event shape** extended with an
+  optional `details` field (composite rules only — structured
+  per-clause snapshot including the canonical expression). Built-in
+  rules' wire shape is unchanged. Top-level `threshold` and
+  `observed` become Strings for composite-rule events (e.g.
+  `"ghs_5s<500.0 & temp_max>80.0"` and
+  `"ghs_5s=450.0 temp_max=82.3"`); `unit` is `null` for composites
+  (the formatted strings already carry the per-metric context).
+- **Slack / Discord webhook formatters** elide the `unit` separator
+  when `unit:` is `nil` so composites render cleanly without
+  trailing or double spaces. Existing built-in renderings
+  (`"450.0 GH/s"` etc.) are unchanged. `slack_title` falls back to
+  `"Composite alert: <rule>"` for any rule not in the built-in
+  `RULE_TITLES` map.
+- **`alerts_enabled=true` boot validation** now accepts a config
+  with composite rules and no per-threshold ENV vars (previously
+  required at least one of the three threshold env vars; now
+  requires at least one of {threshold OR composite}).
+- **`docs/log_schema.md`** updated: `rule` standard key documents
+  the composite rule-name space; `threshold` / `observed` document
+  the String-for-composites shape; new `details` / `built_in_rules`
+  / `composite_rules` standard keys reserved; `alert.fired` /
+  `alert.resolved` / `alert.config_loaded` /
+  `alert.suppressed_during_restart_window` event-catalog rows
+  updated.
+- **New `alert.config_loaded` log line** emitted at AlertEvaluator
+  construction listing enabled built-in rules and composite rule
+  names — operator can confirm at boot that ENV parsed as intended.
+
 ## [1.3.3] — 2026-04-25
 
 ### Added
@@ -238,16 +305,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and raise `ConfigError` with a specific message, replacing the
   fragile `rescue NoMethodError` that previously hid method-rename
   bugs.
-- **CI publishes multi-arch container images on `v*` tag push.** New
-  `.github/workflows/release.yml` builds `linux/amd64` + `linux/arm64`
-  images on native GitHub-hosted runners and pushes to
-  `ghcr.io/jramos/cgminer_monitor` with semver-derived tags
-  (`1.2.3` / `1.2` / `1` / `latest`, prerelease-safe) plus SLSA
-  provenance and CycloneDX SBOM attestations. A `workflow_dispatch`
-  entry point runs ad-hoc builds with a user-supplied tag
-  (default `edge`) for smoke tests. (First release under this workflow
-  was the v0.1.0 tag on 2026-04-21, which published before this
-  CHANGELOG caught up; rolled into 1.1.0 here for clarity.)
 
 ### Changed
 - **Server signal dispatcher uses `launcher.events.on_booted` instead

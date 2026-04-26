@@ -23,6 +23,7 @@ module CgminerMonitor
     :alerts_offline_after_seconds,
     :alerts_cooldown_seconds,
     :alerts_webhook_timeout_seconds,
+    :composite_rules,
     :restart_schedule_url,
     :restart_window_grace_seconds
   ) do
@@ -67,12 +68,15 @@ module CgminerMonitor
       raise ConfigError, "alerts_cooldown_seconds must be > 0" unless alerts_cooldown_seconds.positive?
       raise ConfigError, "alerts_webhook_timeout_seconds must be > 0" unless alerts_webhook_timeout_seconds.positive?
 
-      return if alerts_hashrate_min_ghs || alerts_temperature_max_c || alerts_offline_after_seconds
+      return if alerts_hashrate_min_ghs || alerts_temperature_max_c ||
+                alerts_offline_after_seconds || composite_rules.any?
 
       raise ConfigError,
-            "alerts_enabled=true but no rule threshold configured " \
-            "(set at least one of ALERTS_HASHRATE_MIN_GHS / " \
-            "ALERTS_TEMPERATURE_MAX_C / ALERTS_OFFLINE_AFTER_SECONDS)"
+            "alerts_enabled=true but no rule configured " \
+            "(set at least one of CGMINER_MONITOR_ALERTS_HASHRATE_MIN_GHS / " \
+            "CGMINER_MONITOR_ALERTS_TEMPERATURE_MAX_C / " \
+            "CGMINER_MONITOR_ALERTS_OFFLINE_AFTER_SECONDS, " \
+            "or define a composite via CGMINER_MONITOR_ALERTS_COMPOSITE_*)"
     end
 
     def redact_mongo_url(url)
@@ -120,6 +124,7 @@ module CgminerMonitor
         alerts_offline_after_seconds: parse_optional_int(env, "CGMINER_MONITOR_ALERTS_OFFLINE_AFTER_SECONDS"),
         alerts_cooldown_seconds: parse_int(env, "CGMINER_MONITOR_ALERTS_COOLDOWN_SECONDS", "300"),
         alerts_webhook_timeout_seconds: parse_int(env, "CGMINER_MONITOR_ALERTS_WEBHOOK_TIMEOUT_SECONDS", "2"),
+        composite_rules: parse_composite_rules(env),
         restart_schedule_url: env["CGMINER_MONITOR_RESTART_SCHEDULE_URL"],
         restart_window_grace_seconds: parse_int(env, "CGMINER_MONITOR_RESTART_WINDOW_GRACE_SECONDS", "300")
       ).validate!
@@ -175,6 +180,28 @@ module CgminerMonitor
       Integer(env[key])
     rescue ArgumentError, TypeError
       raise ConfigError, "#{key} must be a valid integer, got: #{env[key].inspect}"
+    end
+
+    COMPOSITE_PREFIX = "CGMINER_MONITOR_ALERTS_COMPOSITE_"
+    private_constant :COMPOSITE_PREFIX
+
+    # Discovers composite rule ENV vars by prefix scan, then routes
+    # each through CompositeRuleParser. Suffix becomes the lowercased
+    # rule name (e.g. *_THERMAL_STRESS → "thermal_stress"). Parser
+    # errors are re-raised with the originating ENV var name prefixed
+    # so the operator sees which composite is broken without grepping.
+    def parse_composite_rules(env)
+      env.keys.grep(/\A#{Regexp.escape(COMPOSITE_PREFIX)}(.+)\z/).sort.map do |key|
+        suffix = key.sub(/\A#{Regexp.escape(COMPOSITE_PREFIX)}/, '')
+        name   = suffix.downcase
+        expr   = env[key].to_s
+
+        begin
+          CompositeRuleParser.parse(name, expr)
+        rescue ConfigError => e
+          raise ConfigError, "#{key}: #{e.message.sub(/\Acomposite rule `[^`]+`: /, '')}"
+        end
+      end
     end
   end
 end

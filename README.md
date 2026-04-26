@@ -71,7 +71,7 @@ Opt-in per-miner threshold alerts. Disabled by default — leave `ALERTS_ENABLED
 | `CGMINER_MONITOR_ALERTS_COOLDOWN_SECONDS` | `300` | Minimum time between re-fires of the same `(miner, rule)` while it stays violating. |
 | `CGMINER_MONITOR_ALERTS_WEBHOOK_TIMEOUT_SECONDS` | `2` | Per-POST open+read timeout. One attempt, no retry. Failures log `event=alert.webhook_failed` and do not abort the poll loop. |
 
-At least one of the three rule thresholds must be set when `ALERTS_ENABLED=true` — the service refuses to boot otherwise. A Slack example:
+At least one of the three built-in rule thresholds OR at least one composite rule (see below) must be configured when `ALERTS_ENABLED=true` — the service refuses to boot otherwise. A Slack example:
 
 ```bash
 export CGMINER_MONITOR_ALERTS_ENABLED=true
@@ -82,6 +82,48 @@ export CGMINER_MONITOR_ALERTS_OFFLINE_AFTER_SECONDS=600
 ```
 
 See [`docs/log_schema.md`](docs/log_schema.md) for the `alert.*` event catalog and the generic webhook body shape.
+
+#### Composite alert rules (v1.4.0+)
+
+Combine multiple atomic-metric clauses into a single named rule with **AND** semantics — useful when a correlated fault (e.g. low hashrate + high temperature = thermal-stressed rig) would otherwise trip two built-in rules and double-page the operator. Configure one composite per ENV var; the suffix is the rule name (lowercased).
+
+```bash
+export CGMINER_MONITOR_ALERTS_COMPOSITE_THERMAL_STRESS='ghs_5s<500 & temp_max>80'
+export CGMINER_MONITOR_ALERTS_COMPOSITE_COLD_DEAD='ghs_5s<100 & temp_max<30'
+```
+
+**Atom-name vs built-in-rule-name table** — composite expressions reference the underlying *atom* (a measurement), not the *rule* (an evaluation):
+
+| Atom (used in composite expression) | Built-in rule (used in ENV var name) | Snapshot source |
+|---|---|---|
+| `ghs_5s` | `hashrate_below` | `summary` snapshot, `SUMMARY[0].GHS 5s` |
+| `temp_max` | `temperature_above` | `devs` snapshot, max over `DEVS[].Temperature` |
+| `offline_seconds` | `offline` | `Sample` time-series, seconds since last `poll/ok` |
+
+Typing `temperature_above>80` in a composite expression is a parse error — use `temp_max>80`.
+
+**Grammar:**
+
+```
+<expr>   := <clause> ('&' <clause>)+    # at least 2 clauses
+<clause> := <metric> <op> <number>
+<metric> := one of {ghs_5s, temp_max, offline_seconds}
+<op>     := one of {<, >, <=, >=, ==}   # multi-character ops are matched longest-first (`<=` before `<`)
+<number> := decimal (sign + integer + optional fractional)
+```
+
+Whitespace around `&` and operators is tolerated. **OR is not yet supported** — `|` triggers a specific boot-time error. Single-clause composites are also rejected (use the built-in rule instead).
+
+A malformed composite fails fast at startup with a `ConfigError` that prefixes the originating ENV var name (e.g. `CGMINER_MONITOR_ALERTS_COMPOSITE_THERMAL_STRESS: unknown metric 'foo'…`) — not at first violation, hours after boot.
+
+**Gotchas:**
+
+- **Flap behavior on noisy correlated metrics.** Cooldown debounces *fires* (re-fire requires `ALERTS_COOLDOWN_SECONDS` since the last fire), but *resolves* emit immediately on transition. A composite whose clauses oscillate around their thresholds can fire→resolve→fire within one cooldown window. Use stable thresholds (margin away from the operating point) and keep the metric noise floor in mind. A per-resolve debounce knob may land in a future release; for now, prefer stable thresholds.
+- **Built-in + composite double-fire by design.** If `ALERTS_TEMPERATURE_MAX_C=80` AND a composite uses `temp_max>80`, both rules fire on the same observation — the operator opted into both. Disable the built-in if you only want the composite.
+- **Missing snapshots → composite skipped.** If a required atom reading is unavailable (no `devs` snapshot yet, restart-window suppression on `offline_seconds`, etc.), the composite is skipped for that miner that tick. **No state write, no fire, no resolve** — protects against transient bad data silently transitioning a real violating composite to ok.
+- **Composite name reservations.** A composite cannot be named `hashrate_below`, `temperature_above`, or `offline` (collides with a built-in rule). Boot fails loud.
+
+The webhook payload's top-level `threshold` and `observed` fields become strings for composites (e.g. `"ghs_5s<500.0 & temp_max>80.0"` and `"ghs_5s=450.0 temp_max=82.3"`); a new optional `details` hash carries the structured per-clause snapshot for generic-format consumers. Slack and Discord renderers display the strings unchanged. See [`docs/log_schema.md`](docs/log_schema.md) for the full event-catalog updates.
 
 ### Miners file
 
@@ -128,22 +170,11 @@ etc. still require a restart.
 
 ### Running with Docker
 
-Multi-arch images (`linux/amd64` + `linux/arm64`) are published from CI to
-GHCR on every `v*` tag push:
-
-```bash
-docker pull ghcr.io/jramos/cgminer_monitor:latest
-# or pin to a specific release:
-docker pull ghcr.io/jramos/cgminer_monitor:1.0
-```
-
-Run with the full stack (Mongo + cgminer_monitor):
-
 ```bash
 # Copy and edit miners config
 cp config/miners.yml.example config/miners.yml
 
-# Start everything
+# Start everything (Mongo + cgminer_monitor)
 docker-compose up
 
 # Or just Mongo for local development

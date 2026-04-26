@@ -62,10 +62,13 @@ Keys that appear across multiple events are named consistently. When you add a n
 | `retry_after`     | integer          | `42`                                        | seconds; paired with 429 responses |
 | `miner`           | string           | `"10.0.0.5:4028"`                           | scalar rig identifier — `"host:port"` |
 | `miners`          | integer          | `3`                                         | count of miners (or an array where the emit site documents it). Never a single rig |
-| `rule`            | string           | `"hashrate_below"`                          | alert rule name; one of `hashrate_below`, `temperature_above`, `offline` |
-| `threshold`       | number           | `1000.0`                                    | snapshot of the configured threshold at emit time (alert events only) |
-| `observed`        | number           | `732.5`                                     | the observed value that triggered a fire/resolve (alert events only) |
-| `unit`            | string           | `"GH/s"`                                    | unit for `threshold`/`observed` — `"GH/s"`, `"C"`, or `"seconds"` |
+| `rule`            | string           | `"hashrate_below"`                          | alert rule name. Built-in rules: `hashrate_below`, `temperature_above`, `offline`. For composite rules (v1.4.0+), the value is the operator-defined composite name (e.g. `thermal_stress`). |
+| `threshold`       | number or string | `1000.0`                                    | snapshot of the configured threshold at emit time (alert events only). String for composite rules (e.g. `"ghs_5s<500.0 & temp_max>80.0"`); number for built-in rules. |
+| `observed`        | number or string | `732.5`                                     | the observed value that triggered a fire/resolve (alert events only). String for composite rules (e.g. `"ghs_5s=450.0 temp_max=82.0"`); number for built-in rules. |
+| `unit`            | string or null   | `"GH/s"`                                    | unit for `threshold`/`observed` — `"GH/s"`, `"C"`, or `"seconds"` for built-ins. `null` for composite rules (the threshold/observed strings already carry the per-metric context). |
+| `details`         | hash             | `{"expression":"…","clauses":{…}}`          | composite-rule structured payload (alert events only). Includes the canonical `expression` string and a per-`clauses` map of `{observed, threshold, op}` entries. Absent for built-in rules. |
+| `built_in_rules`  | array of strings | `["temperature_above"]`                     | enabled built-in rule names (`alert.config_loaded` only) |
+| `composite_rules` | array of strings | `["thermal_stress"]`                        | enabled composite rule names (`alert.config_loaded` only) |
 | `log_format`      | string           | `"json"` or `"text"`                        | effective formatter — `server.start` only |
 | `log_level`       | string           | `"info"`                                    | effective level threshold — `server.start` only |
 | `mongo_url`       | string           | `"mongodb://[REDACTED]@db:27017/monitor"`   | always credential-redacted; `server.start` only |
@@ -154,15 +157,17 @@ Manager's per-command wire telemetry, emitted at debug level (opt-in via `LOG_LE
 ### `alert.*` (cgminer_monitor)
 
 
-Opt-in per-miner threshold alerts. Wire-up: `CGMINER_MONITOR_ALERTS_ENABLED=true` plus a webhook URL and at least one of the three rule thresholds (`ALERTS_HASHRATE_MIN_GHS`, `ALERTS_TEMPERATURE_MAX_C`, `ALERTS_OFFLINE_AFTER_SECONDS`). See the repo README for the full env matrix.
+Opt-in per-miner threshold alerts. Wire-up: `CGMINER_MONITOR_ALERTS_ENABLED=true` plus a webhook URL and at least one of the three built-in rule thresholds (`ALERTS_HASHRATE_MIN_GHS`, `ALERTS_TEMPERATURE_MAX_C`, `ALERTS_OFFLINE_AFTER_SECONDS`) OR at least one composite rule (`CGMINER_MONITOR_ALERTS_COMPOSITE_*`, v1.4.0+). See the repo README for the full env matrix and composite-rule grammar.
 
 | Event | Level | Emitter | Required keys | Optional |
 |-------|-------|---------|---------------|----------|
-| `alert.fired` | warn | `AlertEvaluator` | `miner`, `rule`, `threshold`, `observed`, `unit` | |
-| `alert.resolved` | info | `AlertEvaluator` | `miner`, `rule`, `threshold`, `observed`, `unit` | |
+| `alert.fired` | warn | `AlertEvaluator` | `miner`, `rule`, `threshold`, `observed`, `unit` | `details` (composite rules only — structured per-clause snapshot, see `details` standard-key) |
+| `alert.resolved` | info | `AlertEvaluator` | `miner`, `rule`, `threshold`, `observed`, `unit` | `details` (composite rules only) |
+| `alert.config_loaded` | info | `AlertEvaluator` (one per construction) | `built_in_rules`, `composite_rules` | |
 | `alert.evaluation_complete` | info | `AlertEvaluator` (one per poll tick) | `duration_ms`, `rules_evaluated`, `fired_count`, `resolved_count` | |
 | `alert.evaluator_error` | error | `Poller` (catches the evaluator) | `error`, `message`, `backtrace` | |
 | `alert.state_write_failed` | error | `AlertEvaluator` | `miner`, `rule`, `error`, `message` | |
+| `alert.suppressed_during_restart_window` | info | `AlertEvaluator` (offline rule + composites using offline_seconds) | `miner`, `rule` | |
 | `alert.webhook_failed` | warn | `WebhookClient` | `miner`, `rule`, `error`, `message` | `status` (HTTP code on non-2xx responses) |
 
 ### `healthz.*` (cgminer_monitor)
