@@ -314,6 +314,79 @@ RSpec.describe CgminerMonitor::Poller do
     it 'does not raise — the loop continues' do
       expect { poller.poll_once }.not_to raise_error
     end
+
+    it 'emits code: from ApiError#code on poll.miner_failed (api errors carry a wire code)' do
+      events = []
+      allow(CgminerMonitor::Logger).to receive(:warn) { |entry| events << entry }
+      api_error = CgminerApiClient::ApiError.new('45: Access denied', cgminer_code: 45)
+      api_failure = CgminerApiClient::MinerResult.failure(miner, api_error)
+      %w[summary devs pools stats].each do |cmd|
+        allow(miner_pool).to receive(:query).with(cmd)
+                                            .and_return(CgminerApiClient::PoolResult.new([api_failure]))
+      end
+
+      poller.poll_once
+
+      failed = events.find { |e| e[:event] == 'poll.miner_failed' }
+      expect(failed[:code]).to eq(:access_denied)
+    end
+
+    it 'synthesizes :timeout for TimeoutError on poll.miner_failed (no wire code available)' do
+      events = []
+      allow(CgminerMonitor::Logger).to receive(:warn) { |entry| events << entry }
+      timeout = CgminerApiClient::TimeoutError.new('connect timeout')
+      timeout_failure = CgminerApiClient::MinerResult.failure(miner, timeout)
+      %w[summary devs pools stats].each do |cmd|
+        allow(miner_pool).to receive(:query).with(cmd)
+                                            .and_return(CgminerApiClient::PoolResult.new([timeout_failure]))
+      end
+
+      poller.poll_once
+
+      failed = events.find { |e| e[:event] == 'poll.miner_failed' }
+      expect(failed[:code]).to eq(:timeout)
+    end
+
+    it 'synthesizes :connection_error for ConnectionError on poll.miner_failed' do
+      events = []
+      allow(CgminerMonitor::Logger).to receive(:warn) { |entry| events << entry }
+      poller.poll_once
+
+      failed = events.find { |e| e[:event] == 'poll.miner_failed' }
+      expect(failed[:code]).to eq(:connection_error)
+    end
+
+    it 'emits :access_denied directly from AccessDeniedError subclass (not just base ApiError)' do
+      events = []
+      allow(CgminerMonitor::Logger).to receive(:warn) { |entry| events << entry }
+      access_denied = CgminerApiClient::AccessDeniedError.new('45: Access denied', cgminer_code: 45)
+      ad_failure = CgminerApiClient::MinerResult.failure(miner, access_denied)
+      %w[summary devs pools stats].each do |cmd|
+        allow(miner_pool).to receive(:query).with(cmd)
+                                            .and_return(CgminerApiClient::PoolResult.new([ad_failure]))
+      end
+
+      poller.poll_once
+
+      failed = events.find { |e| e[:event] == 'poll.miner_failed' }
+      expect(failed[:code]).to eq(:access_denied)
+    end
+
+    it 'falls through to :unexpected for any non-CgminerApiClient StandardError' do
+      events = []
+      allow(CgminerMonitor::Logger).to receive(:warn) { |entry| events << entry }
+      stray = StandardError.new('out of left field')
+      stray_failure = CgminerApiClient::MinerResult.failure(miner, stray)
+      %w[summary devs pools stats].each do |cmd|
+        allow(miner_pool).to receive(:query).with(cmd)
+                                            .and_return(CgminerApiClient::PoolResult.new([stray_failure]))
+      end
+
+      poller.poll_once
+
+      failed = events.find { |e| e[:event] == 'poll.miner_failed' }
+      expect(failed[:code]).to eq(:unexpected)
+    end
   end
 
   describe '#stop' do
