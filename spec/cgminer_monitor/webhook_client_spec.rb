@@ -128,6 +128,71 @@ RSpec.describe CgminerMonitor::WebhookClient do
     end
   end
 
+  describe 'composite-rule payload (details + unit elision)' do
+    let(:composite_payload) do
+      { event: 'alert.fired',
+        miner: '10.0.0.5:4028',
+        rule: 'thermal_stress',
+        threshold: 'ghs_5s<500.0 & temp_max>80.0',
+        observed: 'ghs_5s=450.5 temp_max=82.3',
+        unit: nil,
+        fired_at: fired_at,
+        details: { 'expression' => 'ghs_5s<500.0 & temp_max>80.0',
+                   'clauses' => { 'ghs_5s' => { 'observed' => 450.5, 'threshold' => 500.0, 'op' => '<' } } } }
+    end
+
+    context 'with generic format' do
+      let(:config) { make_config('generic') }
+
+      it 'includes the structured details hash in the body' do
+        stub_request(:post, webhook_url).to_return(status: 200)
+        client.fire(**composite_payload)
+
+        body = last_posted_body
+        expect(body['rule']).to eq 'thermal_stress'
+        expect(body['unit']).to be_nil
+        expect(body['details']).to include('expression' => 'ghs_5s<500.0 & temp_max>80.0')
+      end
+
+      it 'omits the details key from built-in-rule payloads (no nil noise)' do
+        stub_request(:post, webhook_url).to_return(status: 200)
+        client.fire(**payload) # built-in rule, no details: passed
+        expect(last_posted_body).not_to have_key('details')
+      end
+    end
+
+    context 'with slack format' do
+      let(:config) { make_config('slack') }
+
+      it 'renders observed/threshold without trailing space when unit is nil' do
+        stub_request(:post, webhook_url).to_return(status: 200)
+        client.fire(**composite_payload)
+
+        att = last_posted_body.fetch('attachments').first
+        expect(att['title']).to include('Composite alert: thermal_stress')
+        observed = att['fields'].find { |f| f['title'] == 'Observed' }
+        threshold = att['fields'].find { |f| f['title'] == 'Threshold' }
+        expect(observed['value']).to eq 'ghs_5s=450.5 temp_max=82.3' # no trailing " "
+        expect(threshold['value']).to eq 'ghs_5s<500.0 & temp_max>80.0'
+      end
+    end
+
+    context 'with discord format' do
+      let(:config) { make_config('discord') }
+
+      it 'renders description without double spaces when unit is nil' do
+        stub_request(:post, webhook_url).to_return(status: 204)
+        client.fire(**composite_payload)
+
+        embed = last_posted_body.fetch('embeds').first
+        expect(embed['title']).to eq 'Composite alert: thermal_stress'
+        expect(embed['description']).to include('observed ghs_5s=450.5 temp_max=82.3 ')
+        expect(embed['description']).to include('(threshold ghs_5s<500.0 & temp_max>80.0)')
+        expect(embed['description']).not_to include('  ') # no double spaces
+      end
+    end
+  end
+
   describe 'failure handling' do
     let(:config) { make_config('generic') }
     let(:log_io) { StringIO.new }

@@ -160,4 +160,39 @@ RSpec.describe 'Alerts integration', :integration do
       expect(posted['rule']).to eq 'offline'
     end
   end
+
+  context 'composite rule through the real evaluator + webhook' do
+    let(:composite_config) do
+      CgminerMonitor::Config.from_env(
+        'CGMINER_MONITOR_MINERS_FILE' => miners_file_path,
+        'CGMINER_MONITOR_ALERTS_ENABLED' => 'true',
+        'CGMINER_MONITOR_ALERTS_WEBHOOK_URL' => webhook_url,
+        'CGMINER_MONITOR_ALERTS_WEBHOOK_FORMAT' => 'generic',
+        'CGMINER_MONITOR_ALERTS_COMPOSITE_THERMAL_STRESS' => 'ghs_5s<500 & temp_max>80',
+        'CGMINER_MONITOR_ALERTS_COOLDOWN_SECONDS' => '60',
+        'CGMINER_MONITOR_ALERTS_WEBHOOK_TIMEOUT_SECONDS' => '2'
+      )
+    end
+
+    let(:composite_evaluator) { CgminerMonitor::AlertEvaluator.new(composite_config) }
+
+    it 'fires once with composite-shaped threshold/observed/details on a violating fleet' do
+      upsert_snapshot(miner: miner_id, command: 'summary',
+                      response: { 'SUMMARY' => [{ 'GHS 5s' => 450.0 }] })
+      upsert_snapshot(miner: miner_id, command: 'devs',
+                      response: { 'DEVS' => [{ 'Temperature' => 82.0 }] })
+
+      composite_evaluator.evaluate(Time.now.utc)
+
+      expect(WebMock).to have_requested(:post, webhook_url).once
+      body = JSON.parse(WebMock::RequestRegistry.instance.requested_signatures.hash.keys.last.body)
+      expect(body['event']).to eq 'alert.fired'
+      expect(body['rule']).to eq 'thermal_stress'
+      expect(body['threshold']).to eq 'ghs_5s<500.0 & temp_max>80.0'
+      expect(body['observed']).to eq 'ghs_5s=450.0 temp_max=82.0'
+      expect(body['unit']).to be_nil
+      expect(body['details']).to include('expression' => 'ghs_5s<500.0 & temp_max>80.0')
+      expect(body['details']['clauses']).to include('ghs_5s', 'temp_max')
+    end
+  end
 end

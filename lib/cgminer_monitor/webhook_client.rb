@@ -26,9 +26,10 @@ module CgminerMonitor
       @timeout = config.alerts_webhook_timeout_seconds
     end
 
-    def fire(event:, miner:, rule:, threshold:, observed:, unit:, fired_at:)
+    def fire(event:, miner:, rule:, threshold:, observed:, unit:, fired_at:, details: nil)
       payload = { event: event, miner: miner, rule: rule, threshold: threshold,
-                  observed: observed, unit: unit, fired_at: fired_at.utc.iso8601(3) }
+                  observed: observed, unit: unit, fired_at: fired_at.utc.iso8601(3),
+                  details: details }
       post(JSON.generate(body_for(payload)), miner: miner, rule: rule)
     rescue StandardError => e
       # Belt-and-braces: any path that slipped past the inner rescue
@@ -69,7 +70,9 @@ module CgminerMonitor
     end
 
     def generic_body(payload)
-      payload.merge(severity: 'warning',
+      # Strip details: nil so the generic body shape stays clean for built-in rules.
+      generic = payload.reject { |k, v| k == :details && v.nil? }
+      generic.merge(severity: 'warning',
                     monitor: { version: CgminerMonitor::VERSION, pid: Process.pid })
     end
 
@@ -80,8 +83,8 @@ module CgminerMonitor
           color: SLACK_COLOR[payload[:event]] || 'warning',
           title: title,
           fields: [
-            { title: 'Observed',  value: "#{payload[:observed]} #{payload[:unit]}",  short: true },
-            { title: 'Threshold', value: "#{payload[:threshold]} #{payload[:unit]}", short: true }
+            { title: 'Observed',  value: render_with_unit(payload[:observed], payload[:unit]),  short: true },
+            { title: 'Threshold', value: render_with_unit(payload[:threshold], payload[:unit]), short: true }
           ],
           ts: Time.parse(payload[:fired_at]).to_i
         }]
@@ -92,12 +95,19 @@ module CgminerMonitor
       {
         embeds: [{
           title: slack_title(payload[:rule], payload[:event]),
-          description: "Miner `#{payload[:miner]}` observed #{payload[:observed]} #{payload[:unit]} " \
-                       "(threshold #{payload[:threshold]} #{payload[:unit]}).",
+          description: "Miner `#{payload[:miner]}` observed #{render_with_unit(payload[:observed], payload[:unit])} " \
+                       "(threshold #{render_with_unit(payload[:threshold], payload[:unit])}).",
           color: DISCORD_COLOR[payload[:event]] || 15_844_367,
           timestamp: payload[:fired_at]
         }]
       }
+    end
+
+    # Composites pass `unit: nil` and a fully-formatted multi-metric
+    # `observed`/`threshold` string. Eliding the separator keeps Slack
+    # / Discord renderings clean (no trailing space, no double space).
+    def render_with_unit(value, unit)
+      [value, unit].compact.join(' ')
     end
 
     RULE_TITLES = {
@@ -108,7 +118,7 @@ module CgminerMonitor
     private_constant :RULE_TITLES
 
     def slack_title(rule, event)
-      base = RULE_TITLES[rule]
+      base = RULE_TITLES[rule] || "Composite alert: #{rule}"
       event == 'alert.resolved' ? "#{base} — resolved" : base
     end
   end
