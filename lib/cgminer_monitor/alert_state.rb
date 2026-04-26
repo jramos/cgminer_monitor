@@ -20,6 +20,12 @@ module CgminerMonitor
     field :state, type: String
     field :threshold, type: Float
     field :last_observed, type: Float
+    # Composite-rule observed snapshot. Built-in rules pass nil here
+    # (their scalar reading lives in `last_observed`). Composites pass
+    # a string-keyed Hash like { "ghs_5s" => 450.5, "temp_max" => 82.3 }.
+    # Mongoid round-trips Hash via BSON document — keep keys as Strings
+    # to avoid Symbol↔String coercion surprises across saves.
+    field :last_observed_components, type: Hash
     field :last_fired_at, type: Time
     field :last_transition_at, type: Time
 
