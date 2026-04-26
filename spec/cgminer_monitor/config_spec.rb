@@ -279,11 +279,18 @@ RSpec.describe CgminerMonitor::Config do
           .to raise_error(CgminerMonitor::ConfigError, /alerts_webhook_timeout_seconds must be > 0/)
       end
 
-      it 'raises when enabled but no rule threshold configured' do
+      it 'raises when enabled but no rule (threshold or composite) configured' do
         env = alerts_env.dup
         env.delete('CGMINER_MONITOR_ALERTS_TEMPERATURE_MAX_C')
         expect { described_class.from_env(env) }
-          .to raise_error(CgminerMonitor::ConfigError, /no rule threshold configured/)
+          .to raise_error(CgminerMonitor::ConfigError) do |e|
+            expect(e.message).to match(/no rule configured/)
+            # Operator must see all four ways to satisfy the validation.
+            expect(e.message).to include('CGMINER_MONITOR_ALERTS_HASHRATE_MIN_GHS')
+            expect(e.message).to include('CGMINER_MONITOR_ALERTS_TEMPERATURE_MAX_C')
+            expect(e.message).to include('CGMINER_MONITOR_ALERTS_OFFLINE_AFTER_SECONDS')
+            expect(e.message).to include('CGMINER_MONITOR_ALERTS_COMPOSITE_*')
+          end
       end
 
       it 'accepts each of the three rule thresholds independently' do
@@ -300,6 +307,55 @@ RSpec.describe CgminerMonitor::Config do
         expect do
           described_class.from_env(base.merge('CGMINER_MONITOR_ALERTS_OFFLINE_AFTER_SECONDS' => '600'))
         end.not_to raise_error
+      end
+    end
+
+    describe 'composite_rules' do
+      let(:base) do
+        valid_env.merge(
+          'CGMINER_MONITOR_ALERTS_ENABLED' => 'true',
+          'CGMINER_MONITOR_ALERTS_WEBHOOK_URL' => 'http://example.com/hook'
+        )
+      end
+
+      it 'discovers composite rules by ENV var prefix and lowercases the name' do
+        env = base.merge(
+          'CGMINER_MONITOR_ALERTS_COMPOSITE_THERMAL_STRESS' => 'ghs_5s<500 & temp_max>80',
+          'CGMINER_MONITOR_ALERTS_COMPOSITE_COLD_DEAD' => 'ghs_5s<100 & temp_max<30'
+        )
+        config = described_class.from_env(env)
+        expect(config.composite_rules.map(&:name)).to contain_exactly('thermal_stress', 'cold_dead')
+      end
+
+      it 'boots cleanly with ONLY a composite (no per-threshold ENV)' do
+        env = base.merge('CGMINER_MONITOR_ALERTS_COMPOSITE_THERMAL_STRESS' => 'ghs_5s<500 & temp_max>80')
+        expect { described_class.from_env(env) }.not_to raise_error
+      end
+
+      it 'rejects a composite name that collides with a built-in rule' do
+        env = base.merge(
+          'CGMINER_MONITOR_ALERTS_TEMPERATURE_MAX_C' => '85',
+          'CGMINER_MONITOR_ALERTS_COMPOSITE_HASHRATE_BELOW' => 'ghs_5s<500 & temp_max>80'
+        )
+        expect { described_class.from_env(env) }
+          .to raise_error(CgminerMonitor::ConfigError, /collides with a built-in rule/)
+      end
+
+      it 'prefixes parser errors with the originating ENV var name' do
+        env = base.merge(
+          'CGMINER_MONITOR_ALERTS_TEMPERATURE_MAX_C' => '85',
+          'CGMINER_MONITOR_ALERTS_COMPOSITE_THERMAL_STRESS' => 'foo<500 & temp_max>80'
+        )
+        expect { described_class.from_env(env) }
+          .to raise_error(CgminerMonitor::ConfigError) do |e|
+            expect(e.message).to start_with('CGMINER_MONITOR_ALERTS_COMPOSITE_THERMAL_STRESS:')
+            expect(e.message).to match(/unknown metric.*foo/)
+          end
+      end
+
+      it 'defaults to an empty composite_rules list when no composite ENV vars are set' do
+        config = described_class.from_env(valid_env)
+        expect(config.composite_rules).to eq([])
       end
     end
 
