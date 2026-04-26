@@ -18,6 +18,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `confirmation_token` standard-key row and a `reason` standard-key
   row covering its enum values. Doc-only schema reservation;
   implemented in `cgminer_manager` v1.7.0.
+- **`docs/log_schema.md`** reserves five new `drain.*` events for
+  the per-miner Drain / Resume flow shipping in `cgminer_manager`
+  v1.8.0: `drain.applied`, `drain.resumed`, `drain.failed`,
+  `drain.indeterminate`, `drain.auto_resume_giving_up`. The three
+  state-change events (`failed` / `resumed` / `indeterminate`) carry
+  a `cause:` Symbol discriminator (`:drain` / `:resume` /
+  `:auto_resume` plus `:operator` / `:auto_resume_orphan_cleared`
+  for `drain.resumed`) so all originating callers share one event
+  name. Existing `alert.suppressed_during_restart_window` event
+  gains an optional `cause:` field (`:restart_window` default,
+  `:drain` for the new path) so monitor's offline-alert suppression
+  is grep-discriminable by source. New `drained_at` and `cause`
+  standard-key rows. Doc-only schema reservation; implementation
+  follows in monitor v1.5.0 alongside the manager v1.8.0 release.
 
 ## [1.4.0] — 2026-04-25
 

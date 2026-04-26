@@ -55,6 +55,8 @@ Keys that appear across multiple events are named consistently. When you add a n
 | `user`            | string or `nil`  | `"admin"`                                   | admin-surface Basic-Auth username; `nil` when unauthenticated |
 | `session_id_hash` | string           | `"a3f1e2d4b6c8"`                            | first 12 hex chars of `SHA256(session_id)`; never the raw session id |
 | `confirmation_token` | string        | UUID v4                                     | single-use 2-minute TTL token issued by the destructive-command confirmation flow (`cgminer_manager` v1.7.0+); appears on `admin.action_*` events and threads step 1 → step 2 of a two-phase POST |
+| `drained_at`      | string           | `"2026-04-26T12:00:00.000Z"`                | ISO8601 UTC timestamp marking when a miner entered drain (`cgminer_manager` v1.8.0+ Drain mode). Appears on `drain.*` events and on the per-miner record served by `/api/v1/restart_schedules.json` |
+| `cause`           | string (Symbol)  | `"drain"` / `"resume"` / `"auto_resume"` / `"restart_window"` | enum-like discriminator on events that share an event name but originate from distinct callers. Values vary per event; each emit-site documents its set. |
 | `reason`          | string (Symbol)  | `"expired"` / `"session_mismatch"` / `"evicted"` / `"not_found"` / `"missing_credentials"` | enum-like discriminator on rejection-style events. Values vary per event (e.g. `admin.auth_failed.reason` is a different enum than `admin.action_rejected.reason`); each emit-site documents its set. |
 | `request_id`      | string           | UUID v4                                     | threads entry/exit events for a single admin POST |
 | `command`         | string           | `"version"`, `"addpool"`                    | cgminer verb or admin command name |
@@ -174,7 +176,19 @@ Opt-in per-miner threshold alerts. Wire-up: `CGMINER_MONITOR_ALERTS_ENABLED=true
 | `alert.evaluation_complete` | info | `AlertEvaluator` (one per poll tick) | `duration_ms`, `rules_evaluated`, `fired_count`, `resolved_count` | |
 | `alert.evaluator_error` | error | `Poller` (catches the evaluator) | `error`, `message`, `backtrace` | |
 | `alert.state_write_failed` | error | `AlertEvaluator` | `miner`, `rule`, `error`, `message` | |
-| `alert.suppressed_during_restart_window` | info | `AlertEvaluator` (offline rule + composites using offline_seconds) | `miner`, `rule` | |
+| `alert.suppressed_during_restart_window` | info | `AlertEvaluator` (offline rule + composites using offline_seconds) | `miner`, `rule`, `cause` | | <!-- `cause` is `"restart_window"` or `"drain"` (v1.5.0+); the first-true predicate (restart-window check, then drain check) wins — the event emits ONCE per affected rule with the discriminator naming why suppression triggered. -->
+
+### `drain.*` (cgminer_manager)
+
+Per-miner Drain / Resume audit events emitted by `cgminer_manager` v1.8.0+. Drain disables pool 0 on the rig (`disablepool 0`) so it stops hashing but stays responsive on the cgminer API; Resume calls `enablepool 0`. Drain state is persisted on the per-miner `RestartSchedule` record and consumed by `cgminer_monitor`'s `RestartScheduleClient#in_drain?` to suppress `offline` alerts (see `alert.suppressed_during_restart_window` row above with `cause: "drain"`).
+
+| Event | Level | Emitter | Required keys | Optional |
+|-------|-------|---------|---------------|----------|
+| `drain.applied` | info | `HttpApp` (post `POST /miner/:id/maintenance/drain`) | `request_id`, `miner_id`, `user`, `drained_at`, `auto_resume_seconds`, `pool_index` | |
+| `drain.resumed` | info | `HttpApp` (post `POST /miner/:id/maintenance/resume`) OR `RestartScheduler` (auto-resume timer fired) | `miner_id`, `cause`, `drained_at`, `pool_index` | `request_id`, `user` (nil when `cause == auto_resume` or `auto_resume_orphan_cleared`). `cause` is `"operator"`, `"auto_resume"`, or `"auto_resume_orphan_cleared"` (the rig was removed from miners.yml while drained — drain state force-cleared, no wire call attempted). |
+| `drain.failed` | warn | `HttpApp` or `RestartScheduler` | `miner_id`, `cause`, `error`, `code` | `request_id`, `user`, `attempt_count` (auto-resume only — for backoff tracking). `cause` is `"drain"`, `"resume"`, or `"auto_resume"`. `code` follows the standard `code` Symbol vocabulary (`access_denied`, `timeout`, etc.). |
+| `drain.indeterminate` | warn | `HttpApp` or `RestartScheduler` | `miner_id`, `cause`, `pool_index` | `request_id`, `user`. `cause` is `"drain"`, `"resume"`, or `"auto_resume"`. Wire call returned `:indeterminate` (verification timed out — operator should verify rig state). For `cause: "drain"` the manager fails closed (persists `drained: true`); for `cause: "resume"` or `cause: "auto_resume"` it clears the drain state. |
+| `drain.auto_resume_giving_up` | error | `RestartScheduler` (one-shot per drain after 5 consecutive `:failed` attempts) | `miner_id`, `attempt_count` | Continues retrying at the 60-minute backoff cap with `drain.failed` (warn) emissions thereafter; recoverable when the rig comes back. |
 | `alert.webhook_failed` | warn | `WebhookClient` | `miner`, `rule`, `error`, `message` | `status` (HTTP code on non-2xx responses) |
 
 ### `healthz.*` (cgminer_monitor)
