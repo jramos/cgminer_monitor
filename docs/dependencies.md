@@ -12,7 +12,7 @@ From the gemspec:
 | `puma` | `>= 6.0` | HTTP server. Embedded via `Puma::Configuration` + `Puma::Launcher`. |
 | `rack-cors` | `~> 2.0` | CORS middleware. Configured from `CGMINER_MONITOR_CORS_ORIGINS`. |
 
-Plus the Ruby stdlib pieces: `json`, `socket`, `yaml`, `cgi/escape`, `time`.
+Plus the Ruby stdlib pieces: `json`, `socket`, `yaml`, `cgi/escape`, `time`, `net/http` + `uri` (used by `WebhookClient` so the alerts feature adds no runtime gem dependency).
 
 **One conditional dependency.** `Gemfile` adds `gem 'ostruct' if RUBY_VERSION >= '3.5'` because Ruby 4.0 moved `ostruct` out of default gems and Mongoid 9 hasn't caught up yet. This is a compatibility shim, not a feature dep — `ostruct` is used by Mongoid internals, not by our code.
 
@@ -31,6 +31,7 @@ group :development do
   gem 'rubocop-rake',  '>= 0.6'
   gem 'rubocop-rspec', '>= 3.0'
   gem 'simplecov',     '>= 0.22'
+  gem 'webmock',       '>= 3.24'
 end
 ```
 
@@ -42,6 +43,7 @@ end
 | `rubocop` | Linter. `.rubocop.yml` has `TargetRubyVersion: 3.2` and turns off most `Metrics/*` cops. |
 | `rubocop-rake` / `rubocop-rspec` | RuboCop plugin cops for Rake and RSpec styles. |
 | `simplecov` | Code coverage. Starts in `spec_helper.rb`. |
+| `webmock` | Stubs `Net::HTTP` in the alerts integration spec and the webhook-client unit spec. Loaded *only* inside those specs via a scoped `require 'webmock/rspec'` — the CLI reload integration spec depends on real local HTTP and must not be affected. |
 
 ## Ruby version support
 

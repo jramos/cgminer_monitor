@@ -7,7 +7,15 @@ end
 
 require 'cgminer_monitor'
 
+# WebMock is only pulled into specs that opt in (webhook_client_spec +
+# alerts_integration_spec) — not globally, because the existing
+# cli_reload_spec boots a real Puma instance and needs localhost net
+# connect. The opt-in specs call `require 'webmock/rspec'` directly
+# and then `WebMock.disable_net_connect!(allow_localhost: true)` in
+# their own `before` blocks.
+
 # Load all support files (mongo_helper, etc.)
+require 'cgminer_test_support'
 Dir[File.expand_path('support/**/*.rb', __dir__)].each { |f| require f }
 
 RSpec.configure do |config|

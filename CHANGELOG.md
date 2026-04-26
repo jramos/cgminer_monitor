@@ -7,6 +7,157 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.3] — 2026-04-25
+
+### Added
+- **`code` field on `poll.miner_failed`** — symbolic error tag for
+  log-side dispatch, populated from `cgminer_api_client::ApiError#code`
+  (v0.4.0+) for wire-side errors (e.g. `:access_denied`,
+  `:invalid_command`, `:unknown`) and synthesized at the rescue site
+  for transport-layer errors (`:timeout`, `:connection_error`) and
+  any unmapped exception (`:unexpected`). Six-symbol vocabulary
+  documented in `docs/log_schema.md`'s Standard-keys table. Operators
+  can now `jq 'select(.code == "access_denied")'` against monitor
+  logs instead of grep-ing English error message substrings.
+
+### Changed
+- **`docs/log_schema.md`** gains a `code` standard key documenting the
+  six-symbol vocabulary that consumers (`cgminer_monitor`,
+  `cgminer_manager`) emit when wrapping rescued
+  `cgminer_api_client::ApiError` exceptions: `access_denied`,
+  `invalid_command`, `unknown`, `timeout`, `connection_error`,
+  `unexpected`. `poll.miner_failed` gains `code` as an optional
+  field; `admin.result` gains `failed_codes` as an optional
+  count-by-code map (e.g. `{"access_denied": 3}`). The
+  `admin.result` field will be populated by an upcoming
+  `cgminer_manager` release; in this gem, only `poll.miner_failed`
+  emits the new field.
+
+## [1.3.2] — 2026-04-25
+
+### Fixed
+- **`Dockerfile`** — replaced removed-in-Bundler-4 `bundle binstubs
+  --path /usr/local/bundle/bin` with `bundle config set --local bin`
+  + plain `bundle binstubs --force`. Was silently OK on Bundler 2.x
+  (which deprecated but accepted `--path`); fails loudly on Bundler
+  4.x (which removes it). The `ruby:4.0-slim` base image ships
+  Bundler 4.x, so the Docker build was broken at HEAD. Surfaced by
+  `cgminer_manager`'s e2e workflow when it bumped its `monitor_ref`
+  pin from `master` (v1.2.0) to `v1.3.1` for trace-id propagation
+  assertions.
+
+## [1.3.1] — 2026-04-25
+
+### Changed
+- **Widened `cgminer_api_client` constraint** from `~> 0.3.0` to
+  `>= 0.3, < 0.5` so consumers like `cgminer_manager` v1.6.0 (which
+  requires api_client v0.4.0 for the `on_wire:` kwarg) can pin both
+  monitor and api_client without a Bundler conflict. No code change.
+
+### Added
+- **Trace-id propagation** via `X-Cgminer-Request-Id` HTTP header.
+  New `CgminerMonitor::RequestId` Rack middleware extracts the
+  inbound value (or generates a fresh UUID v4) and stashes it on
+  `env['cgminer_monitor.request_id']`. New `http.request`
+  after-filter event logs `method`, `path`, `status`, `duration_ms`,
+  and `request_id`. `http.unhandled_error` also gains `request_id`.
+  Response always echoes `X-Cgminer-Request-Id`. OpenAPI 3.1 spec
+  documents the header on every `/v2/*` operation as optional
+  inbound, plus the response-header echo via
+  `components.headers.XCgminerRequestId`. Background events
+  (`poll.*`, `alert.*`, `mongo.*`) deliberately don't carry
+  `request_id` — they fire from the timer thread, not from HTTP
+  requests.
+
+### Changed
+- **`docs/log_schema.md`** gains a Correlation subsection documenting
+  `request_id` propagation across `cgminer_manager → cgminer_monitor` and
+  the closure-based wiring through `cgminer_api_client`'s `on_wire`
+  callback. New `cgminer.*` namespace reservation (manager-only,
+  debug-level) plus `cgminer.wire` event-catalog row. Multiple existing
+  event rows updated to mark `request_id` as required: `admin.auth_failed`,
+  `admin.auth_misconfigured`, `http.request`, `http.500`,
+  `http.unhandled_error`, `monitor.call`, `monitor.call.failed`,
+  `rate_limit.exceeded` (was previously documented only for
+  `admin.command` / `admin.result`). Implementations follow in upcoming
+  `cgminer_monitor` and `cgminer_manager` releases — schema is a
+  forward-looking contract until then.
+- Test-support code (FakeCgminer, CgminerFixtures) extracted to the
+  shared `cgminer_test_support` gem. `spec/support/mongo_helper.rb`
+  remains repo-specific and unchanged. Spec references updated to
+  `CgminerTestSupport::FakeCgminer` /
+  `CgminerTestSupport::Fixtures::*`.
+
+### Added
+- **Read-side suppression of `offline` alerts during a scheduled restart**
+  (`lib/cgminer_monitor/restart_schedule_client.rb`). When
+  `CGMINER_MONITOR_RESTART_SCHEDULE_URL` points at `cgminer_manager`'s
+  `GET /api/v1/restart_schedules.json`, AlertEvaluator skips the
+  `offline` rule for any miner currently inside
+  `[scheduled_minute, scheduled_minute + RESTART_WINDOW_GRACE_SECONDS)`
+  UTC and emits `alert.suppressed_during_restart_window` instead.
+  Window math is UTC seconds-of-day modulo 86_400 so a `23:59` schedule
+  with a 5-minute grace correctly suppresses an alert at 00:02 UTC the
+  following day. The fetch is fail-open: HTTP failure / malformed JSON
+  / missing schedules key all yield an empty schedule map plus a single
+  `restart.schedule_fetch_failed` log per failure, so monitor still
+  pages on real outages even when the manager is down. Two new env
+  vars: `CGMINER_MONITOR_RESTART_SCHEDULE_URL` (default unset →
+  suppression disabled, offline rule fires normally) and
+  `CGMINER_MONITOR_RESTART_WINDOW_GRACE_SECONDS` (default 300).
+  Validated at boot — bad URL or non-positive grace fail loud rather
+  than at first fetch.
+- **Per-miner alerts with a webhook sink**, opt-in via
+  `CGMINER_MONITOR_ALERTS_ENABLED=true`. Evaluates three rules per
+  poll tick against the freshly-written `Snapshot` collection:
+  `hashrate_below` (from `SUMMARY.GHS 5s`), `temperature_above`
+  (max-over-devices from `DEVS[].Temperature`), and `offline`
+  (seconds since last ok snapshot). Thresholds are global ENV vars;
+  leaving any single threshold unset disables that rule. At least
+  one threshold must be set when enabled — boot fails loudly
+  otherwise rather than silently becoming a no-op. Disabled by
+  default, so Prometheus + Alertmanager users carry zero new surface.
+- **Stateful fire-and-resolve model.** New `alert_states` Mongo
+  collection tracks per-`(miner, rule)` state via a composite string
+  `_id` — no secondary index. `alert.fired` emits on a
+  healthy→violating transition (including the first-ever observation);
+  `alert.resolved` on violating→healthy. While a rule stays violating,
+  `alert.fired` re-emits after `CGMINER_MONITOR_ALERTS_COOLDOWN_SECONDS`
+  (default 300s) so consumers that missed a notification still get
+  re-paged. State survives restart: a still-violating rig fires on
+  the first post-restart tick (the event is new to the consumer).
+- **Webhook formats: generic / slack / discord.** Generic is a stable
+  JSON contract (`{event, miner, rule, severity, threshold, observed,
+  unit, fired_at, monitor:{version, pid}}`). Slack reshapes to the
+  legacy `attachments[]` shape (Block Kit `blocks[]` doesn't support
+  the color sidebar). Discord reshapes to native `embeds[]` with a
+  decimal RGB color. `alerts_webhook_format` config picks one;
+  default is `generic`. Webhook client uses stdlib `Net::HTTP` only
+  (no new runtime gem), one POST per fire, shared open + read
+  timeout from `ALERTS_WEBHOOK_TIMEOUT_SECONDS` (default 2s). No
+  retry — webhook failures log `alert.webhook_failed` and the
+  evaluator + poll loop continue; the semantic event is persisted
+  either way.
+- **`alert.*` log namespace** reserved in `docs/log_schema.md` for
+  cgminer_monitor. Six events: `alert.fired`, `alert.resolved`,
+  `alert.evaluation_complete` (per-tick timing pair for
+  `poll.complete`), `alert.evaluator_error` (catch-all at the Poller
+  call site so evaluator bugs never kill the poll loop),
+  `alert.state_write_failed` (Mongo upsert failure), and
+  `alert.webhook_failed`. Four new standard keys: `rule`,
+  `threshold`, `observed`, `unit`.
+- Evaluator runs inside the poller thread, synchronously, **after**
+  the `poll.complete` log line — preserves the completion-timestamp
+  cadence the healthz stall-detection relies on. Evaluator emits its
+  own `alert.evaluation_complete` with `duration_ms` for end-to-end
+  timing.
+
+### Changed
+- `Server#bootstrap_mongoid!` now calls
+  `CgminerMonitor::AlertState.create_indexes` alongside
+  `Snapshot.create_indexes`. Only the implicit `_id` index is
+  created; no secondary index.
+
 ## [1.2.0] — 2026-04-23
 
 ### Added

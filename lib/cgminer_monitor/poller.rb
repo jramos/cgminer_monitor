@@ -8,14 +8,15 @@ module CgminerMonitor
 
     attr_reader :polls_ok, :polls_failed
 
-    def initialize(config, miner_pool: nil)
-      @config       = config
-      @miner_pool   = miner_pool || build_miner_pool(config.miners_file)
-      @stopped      = false
-      @mutex        = Mutex.new
-      @cv           = ConditionVariable.new
-      @polls_ok     = 0
-      @polls_failed = 0
+    def initialize(config, miner_pool: nil, alert_evaluator: nil)
+      @config          = config
+      @miner_pool      = miner_pool || build_miner_pool(config.miners_file)
+      @alert_evaluator = alert_evaluator || build_alert_evaluator(config)
+      @stopped         = false
+      @mutex           = Mutex.new
+      @cv              = ConditionVariable.new
+      @polls_ok        = 0
+      @polls_failed    = 0
     end
 
     def poll_once
@@ -40,6 +41,15 @@ module CgminerMonitor
                   snapshots_upserted: snapshot_ops.size,
                   polls_ok: @polls_ok,
                   polls_failed: @polls_failed)
+
+      # Evaluator runs AFTER the samples + snapshots are persisted so
+      # it always reads the just-written state (the offline rule keys
+      # on the poll/ok=1.0 sample this tick just wrote). Also runs
+      # after the poll.complete log so the fleet-level "poll finished"
+      # event isn't interleaved with per-miner alert emissions.
+      # Evaluator emits its own alert.evaluation_complete for
+      # end-to-end timing.
+      run_alert_evaluator(now)
     rescue Mongo::Error => e
       increment_failed
       Logger.error(event: 'mongo.write_failed', error: e.class.to_s, message: e.message)
@@ -92,6 +102,13 @@ module CgminerMonitor
 
     private
 
+    def run_alert_evaluator(now)
+      @alert_evaluator.evaluate(now)
+    rescue StandardError => e
+      Logger.error(event: 'alert.evaluator_error', error: e.class.to_s,
+                   message: e.message, backtrace: e.backtrace&.first(10))
+    end
+
     def poll_miner(pool, miner, now, all_samples, snapshot_ops)
       miner_id   = "#{miner.host}:#{miner.port}"
       started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -137,7 +154,11 @@ module CgminerMonitor
         miner_id, command,
         { "fetched_at" => now, "ok" => false, "response" => nil, "error" => error_msg }
       )
-      Logger.warn(event: 'poll.miner_failed', miner: miner_id, command: command, error: error_msg)
+      Logger.warn(event: 'poll.miner_failed',
+                  miner: miner_id,
+                  command: command,
+                  error: error_msg,
+                  code: miner_result ? code_for(miner_result.error) : :unexpected)
     end
 
     def append_synthetic_samples(miner_id, miner_ok, elapsed_ms, now, all_samples)
@@ -207,6 +228,15 @@ module CgminerMonitor
       Snapshot.collection.bulk_write(ops, ordered: false)
     end
 
+    def build_alert_evaluator(config)
+      restart_client =
+        if config.restart_schedule_url
+          RestartScheduleClient.new(url: config.restart_schedule_url,
+                                    grace_seconds: config.restart_window_grace_seconds)
+        end
+      AlertEvaluator.new(config, restart_schedule_client: restart_client)
+    end
+
     def build_miner_pool(miners_file)
       # CgminerApiClient::MinerPool.new hardcodes 'config/miners.yml' relative
       # to CWD via load_miners!. We bypass initialize with allocate and set
@@ -230,6 +260,20 @@ module CgminerMonitor
       @mutex.synchronize do
         @cv.wait(@mutex, seconds) unless @stopped
       end
+    end
+
+    # Maps a rescued exception to a single-symbol vocabulary for
+    # log-side dispatch. cgminer_api_client::ApiError (v0.4.0+)
+    # carries its own #code Symbol; transport-layer errors don't,
+    # so synthesize a parallel symbol so consumers can `case .code`
+    # uniformly. The six values match docs/log_schema.md's `code`
+    # standard-key entry.
+    def code_for(error)
+      return error.code if error.respond_to?(:code) && error.code.is_a?(Symbol)
+      return :timeout if error.is_a?(CgminerApiClient::TimeoutError)
+      return :connection_error if error.is_a?(CgminerApiClient::ConnectionError)
+
+      :unexpected
     end
   end
 end

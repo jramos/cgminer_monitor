@@ -78,12 +78,12 @@ Mongo driver errors (`Mongo::Error`) and cgminer API errors (`CgminerApiClient::
 ### `CgminerMonitor::Config` (`Data.define`)
 **File:** `lib/cgminer_monitor/config.rb`
 
-Immutable 14-field value object built from ENV. Fields: `interval`, `retention_seconds`, `mongo_url`, `http_host`, `http_port`, `http_min_threads`, `http_max_threads`, `miners_file`, `log_format`, `log_level`, `cors_origins`, `shutdown_timeout`, `healthz_stale_multiplier`, `healthz_startup_grace_seconds`.
+Immutable 23-field value object built from ENV. Core fields: `interval`, `retention_seconds`, `mongo_url`, `http_host`, `http_port`, `http_min_threads`, `http_max_threads`, `miners_file`, `log_format`, `log_level`, `cors_origins`, `shutdown_timeout`, `healthz_stale_multiplier`, `healthz_startup_grace_seconds`, `pid_file`. Alerts fields (opt-in; all validated only when `alerts_enabled=true`): `alerts_enabled`, `alerts_webhook_url`, `alerts_webhook_format`, `alerts_hashrate_min_ghs`, `alerts_temperature_max_c`, `alerts_offline_after_seconds`, `alerts_cooldown_seconds`, `alerts_webhook_timeout_seconds`.
 
 Public surface:
 - `Config.from_env(env = ENV)` — build + validate in one call. Raises `ConfigError` on bad values.
 - `Config.current` — memoized `from_env` result for code paths that want a global handle (primarily `HttpApp`). `Config.reset!` clears the memo (tests only).
-- `#validate!` — runs sanity checks: `interval > 0`, `log_format ∈ {json, text}`, `miners_file` exists, `log_level ∈ {debug, info, warn, error}`.
+- `#validate!` — runs sanity checks: `interval > 0`, `log_format ∈ {json, text}`, `miners_file` exists, `log_level ∈ {debug, info, warn, error}`. When `alerts_enabled=true` delegates to a private `validate_alerts!` that also checks the webhook URL, format, timeouts, and at-least-one-threshold requirement.
 - `#public_attrs` — `to_h` with the mongo URL redacted (`mongodb://user:pass@host` → `mongodb://[REDACTED]@host`). Used by `doctor` output and supplies the redacted `mongo_url` value for the `server.start` log entry.
 
 Any constructor field that fails parsing surfaces as a `ConfigError` at boot time, which the CLI translates into exit `78` (`EX_CONFIG`).
@@ -153,6 +153,37 @@ Private surface worth noting:
 - `normalize_metric(field)` — lowercases, replaces spaces with underscores, maps `%` to `_pct`. Turns `"Pool Rejected%"` into `pool_rejected_pct`.
 - `build_miner_pool(miners_file)` — the `CgminerApiClient::MinerPool.allocate` + manual `.miners=` dance that honors a configurable miners path.
 
+### `CgminerMonitor::AlertEvaluator` and `CgminerMonitor::WebhookClient`
+**Files:** `lib/cgminer_monitor/alert_evaluator.rb`, `lib/cgminer_monitor/webhook_client.rb`
+
+Opt-in alerting side. Runs inside the poller thread, once per poll tick, *after* `poll.complete` — preserves the poll-complete cadence for stall detection. Disabled by default (`alerts_enabled=false`) — the evaluator early-returns.
+
+`AlertEvaluator#evaluate(now)`:
+- Reads the freshly-written `Snapshot` collection (mirrors how `HttpApp#build_prometheus_metrics` extracts hashrate, temperature, availability) and computes three per-miner readings: `hashrate_below` (from `SUMMARY.first['GHS 5s']`), `temperature_above` (max over `DEVS[].Temperature`), and `offline` (seconds since last ok-snapshot, or `0` if last poll was ok).
+- Transitions state in `AlertState` docs (`alert_states` collection). The state machine is a per-`(miner, rule)` ok/violating pair with cooldown-gated re-fire — first-ever violating observation fires; ok→violating fires; violating→healthy resolves; violating→violating re-fires only if `cooldown_seconds` have passed since the last fire.
+- Emits `alert.fired` / `alert.resolved` log events and invokes the injected `WebhookClient#fire`. Evaluator exceptions are caught at the `Poller` call site and logged as `alert.evaluator_error`; a bug in alert logic never kills the poll loop. Mongo write failures inside the evaluator are caught locally and logged as `alert.state_write_failed`; the evaluator continues with the next rule.
+
+`WebhookClient#fire(...)`:
+- Single `Net::HTTP::Post` attempt, `open_timeout` + `read_timeout` from `config.alerts_webhook_timeout_seconds` (default 2s). No retry.
+- Dispatches the body shape on `config.alerts_webhook_format`: `generic` (stable JSON contract), `slack` (legacy `attachments[]` — Block Kit doesn't support the color sidebar), `discord` (native `embeds[]` with decimal RGB color).
+- All failure modes — non-2xx, `Net::OpenTimeout`, `Net::ReadTimeout`, `SocketError`, `Errno::ECONNREFUSED`, outer `StandardError` — log `alert.webhook_failed` and return. The semantic event is persisted in `alert_states`; only the notification sink missed it.
+
+See `docs/log_schema.md` for the `alert.*` event catalog and the full standard-keys table.
+
+### `CgminerMonitor::RestartScheduleClient`
+**File:** `lib/cgminer_monitor/restart_schedule_client.rb`
+
+Read-side companion to `cgminer_manager`'s scheduled-restart feature. When `CGMINER_MONITOR_RESTART_SCHEDULE_URL` is set, `Poller#build_alert_evaluator` constructs a client and threads it into `AlertEvaluator`; on every poll tick, before computing `offline` for a miner, the evaluator calls `RestartScheduleClient#in_restart_window?(miner, now)` and skips the rule (with a single `alert.suppressed_during_restart_window` log line) when it returns true.
+
+`#fetch` does one `Net::HTTP::Get` against the URL and caches the parsed schedule map for 30 s (so a 60-miner fleet still results in one HTTP call per ~30 s, not per-miner). Failure modes — `Net::OpenTimeout`, `Net::ReadTimeout`, `SocketError`, `Errno::ECONNREFUSED`, `IOError`, `JSON::ParserError`, non-2xx responses, missing `schedules` key — yield an empty schedule map and a single `restart.schedule_fetch_failed` log per failure. The cached map is preserved across failures rather than oscillating to empty, so a transient blip doesn't drop suppression.
+
+`#in_restart_window?` math is UTC seconds-of-day modulo 86400 to handle midnight wrap. Window is one-sided: only `[scheduled_minute, scheduled_minute + grace_seconds)`, not before. A restart fired at exactly 04:00 takes 30 s to ~5 min for the miner to come back; pre-window suppression is unnecessary because cgminer hasn't gone offline yet.
+
+### `CgminerMonitor::AlertState` (Mongoid document)
+**File:** `lib/cgminer_monitor/alert_state.rb`
+
+Per-`(miner, rule)` state for the evaluator. Composite string `_id` (`"#{miner}|#{rule}"`) enforces uniqueness via Mongo's implicit `_id` index — no secondary unique index. Fields: `miner`, `rule`, `state` (`"ok"` | `"violating"`), `threshold`, `last_observed`, `last_fired_at`, `last_transition_at`. Survives restart — restart-with-violating-rig fires on the first post-restart poll, which is correct (the event is new to the consumer).
+
 ### `CgminerMonitor::Server`
 **File:** `lib/cgminer_monitor/server.rb`
 
@@ -162,7 +193,7 @@ Responsibilities:
 - Install SIGTERM/SIGINT handlers **before** Puma starts (and reinstall after, see `architecture.md`).
 - Configure Mongoid from `config.mongo_url`.
 - `validate_startup!` — verify `miners.yml` parses non-empty and Mongo is reachable (raises `ConfigError` on empty, `Mongo::Error` on unreachable).
-- `bootstrap_mongoid!` — programmatic `store_in` + `create_collection` for `Sample`; `create_indexes` for `Snapshot`.
+- `bootstrap_mongoid!` — programmatic `store_in` + `create_collection` for `Sample`; `create_indexes` for `Snapshot` and `AlertState`.
 - Wire up `HttpApp` Sinatra settings (`settings.poller`, `settings.started_at`, `settings.configured_miners`) for health-check and metrics access via `HttpApp.set :key, value`.
 - Spawn Poller and Puma threads; block on `@stop.pop`.
 - On signal: stop poller, `join` with shutdown timeout, stop launcher, `join` again, exit 0.

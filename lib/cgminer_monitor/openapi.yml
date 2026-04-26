@@ -16,9 +16,14 @@ paths:
     get:
       operationId: getHealthz
       summary: Liveness/readiness check
+      parameters:
+        - $ref: '#/components/parameters/XCgminerRequestId'
       responses:
         "200":
           description: Healthy or starting
+          headers:
+            X-Cgminer-Request-Id:
+              $ref: '#/components/headers/XCgminerRequestId'
           content:
             application/json:
               schema:
@@ -33,14 +38,22 @@ paths:
                   uptime_s: { type: integer }
         "503":
           description: Degraded
+          headers:
+            X-Cgminer-Request-Id:
+              $ref: '#/components/headers/XCgminerRequestId'
 
   /v2/metrics:
     get:
       operationId: getMetrics
       summary: Prometheus metrics endpoint
+      parameters:
+        - $ref: '#/components/parameters/XCgminerRequestId'
       responses:
         "200":
           description: Prometheus text exposition
+          headers:
+            X-Cgminer-Request-Id:
+              $ref: '#/components/headers/XCgminerRequestId'
           content:
             text/plain:
               schema:
@@ -50,9 +63,14 @@ paths:
     get:
       operationId: getMiners
       summary: List configured miners with current availability
+      parameters:
+        - $ref: '#/components/parameters/XCgminerRequestId'
       responses:
         "200":
           description: Miner list
+          headers:
+            X-Cgminer-Request-Id:
+              $ref: '#/components/headers/XCgminerRequestId'
           content:
             application/json:
               schema:
@@ -79,15 +97,22 @@ paths:
           required: true
           schema: { type: string }
           description: "host:port identifier"
+        - $ref: '#/components/parameters/XCgminerRequestId'
       responses:
         "200":
           description: Device snapshot
+          headers:
+            X-Cgminer-Request-Id:
+              $ref: '#/components/headers/XCgminerRequestId'
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/SnapshotEnvelope"
         "404":
           description: Unknown miner
+          headers:
+            X-Cgminer-Request-Id:
+              $ref: '#/components/headers/XCgminerRequestId'
 
   /v2/miners/{miner}/pools:
     get:
@@ -98,15 +123,22 @@ paths:
           in: path
           required: true
           schema: { type: string }
+        - $ref: '#/components/parameters/XCgminerRequestId'
       responses:
         "200":
           description: Pool snapshot
+          headers:
+            X-Cgminer-Request-Id:
+              $ref: '#/components/headers/XCgminerRequestId'
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/SnapshotEnvelope"
         "404":
           description: Unknown miner
+          headers:
+            X-Cgminer-Request-Id:
+              $ref: '#/components/headers/XCgminerRequestId'
 
   /v2/miners/{miner}/summary:
     get:
@@ -117,15 +149,22 @@ paths:
           in: path
           required: true
           schema: { type: string }
+        - $ref: '#/components/parameters/XCgminerRequestId'
       responses:
         "200":
           description: Summary snapshot
+          headers:
+            X-Cgminer-Request-Id:
+              $ref: '#/components/headers/XCgminerRequestId'
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/SnapshotEnvelope"
         "404":
           description: Unknown miner
+          headers:
+            X-Cgminer-Request-Id:
+              $ref: '#/components/headers/XCgminerRequestId'
 
   /v2/miners/{miner}/stats:
     get:
@@ -136,15 +175,22 @@ paths:
           in: path
           required: true
           schema: { type: string }
+        - $ref: '#/components/parameters/XCgminerRequestId'
       responses:
         "200":
           description: Stats snapshot
+          headers:
+            X-Cgminer-Request-Id:
+              $ref: '#/components/headers/XCgminerRequestId'
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/SnapshotEnvelope"
         "404":
           description: Unknown miner
+          headers:
+            X-Cgminer-Request-Id:
+              $ref: '#/components/headers/XCgminerRequestId'
 
   /v2/graph_data/hashrate:
     get:
@@ -164,15 +210,22 @@ paths:
           in: query
           required: false
           schema: { type: string }
+        - $ref: '#/components/parameters/XCgminerRequestId'
       responses:
         "200":
           description: Hashrate data
+          headers:
+            X-Cgminer-Request-Id:
+              $ref: '#/components/headers/XCgminerRequestId'
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/GraphDataEnvelope"
         "400":
           description: Invalid parameters
+          headers:
+            X-Cgminer-Request-Id:
+              $ref: '#/components/headers/XCgminerRequestId'
 
   /v2/graph_data/temperature:
     get:
@@ -191,15 +244,22 @@ paths:
           in: query
           required: false
           schema: { type: string }
+        - $ref: '#/components/parameters/XCgminerRequestId'
       responses:
         "200":
           description: Temperature data
+          headers:
+            X-Cgminer-Request-Id:
+              $ref: '#/components/headers/XCgminerRequestId'
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/GraphDataEnvelope"
         "400":
           description: Invalid parameters
+          headers:
+            X-Cgminer-Request-Id:
+              $ref: '#/components/headers/XCgminerRequestId'
 
   /v2/graph_data/availability:
     get:
@@ -218,15 +278,22 @@ paths:
           in: query
           required: false
           schema: { type: string }
+        - $ref: '#/components/parameters/XCgminerRequestId'
       responses:
         "200":
           description: Availability data
+          headers:
+            X-Cgminer-Request-Id:
+              $ref: '#/components/headers/XCgminerRequestId'
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/GraphDataEnvelope"
         "400":
           description: Invalid parameters
+          headers:
+            X-Cgminer-Request-Id:
+              $ref: '#/components/headers/XCgminerRequestId'
 
   /openapi.yml:
     get:
@@ -245,6 +312,29 @@ paths:
           description: HTML documentation page
 
 components:
+  parameters:
+    XCgminerRequestId:
+      in: header
+      name: X-Cgminer-Request-Id
+      schema:
+        type: string
+        format: uuid
+      required: false
+      description: |
+        Optional UUID v4 carried for cross-repo trace correlation.
+        If supplied, monitor uses the inbound value as the
+        request_id field in structured logs (http.request,
+        http.unhandled_error) and echoes it in the response header.
+        If absent, monitor generates a fresh UUID. Used end-to-end
+        across cgminer_api_client → cgminer_monitor → cgminer_manager.
+
+  headers:
+    XCgminerRequestId:
+      schema:
+        type: string
+        format: uuid
+      description: Echoes the request's correlation UUID v4.
+
   schemas:
     SnapshotEnvelope:
       type: object

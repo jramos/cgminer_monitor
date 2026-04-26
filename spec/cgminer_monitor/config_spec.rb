@@ -127,6 +127,239 @@ RSpec.describe CgminerMonitor::Config do
     end
   end
 
+  describe 'alerts config' do
+    let(:alerts_env) do
+      valid_env.merge(
+        'CGMINER_MONITOR_ALERTS_ENABLED' => 'true',
+        'CGMINER_MONITOR_ALERTS_WEBHOOK_URL' => 'https://hooks.slack.com/services/AAA/BBB/CCC',
+        'CGMINER_MONITOR_ALERTS_TEMPERATURE_MAX_C' => '85.0'
+      )
+    end
+
+    describe 'defaults when alerts_enabled not set' do
+      it 'leaves alerts disabled and thresholds nil' do
+        config = described_class.from_env(valid_env)
+        expect(config.alerts_enabled).to be false
+        expect(config.alerts_webhook_url).to be_nil
+        expect(config.alerts_webhook_format).to eq 'generic'
+        expect(config.alerts_hashrate_min_ghs).to be_nil
+        expect(config.alerts_temperature_max_c).to be_nil
+        expect(config.alerts_offline_after_seconds).to be_nil
+        expect(config.alerts_cooldown_seconds).to eq 300
+        expect(config.alerts_webhook_timeout_seconds).to eq 2
+      end
+    end
+
+    describe 'parse_bool' do
+      %w[1 true TRUE yes on].each do |truthy|
+        it "accepts #{truthy.inspect} as true" do
+          env = valid_env.merge('CGMINER_MONITOR_ALERTS_ENABLED' => truthy)
+          # We disable the rest of the alerts validation by only asserting parse succeeded
+          # via the next validate pass; use a threshold so validate_alerts! is satisfied.
+          env['CGMINER_MONITOR_ALERTS_WEBHOOK_URL'] = 'http://example.com/hook'
+          env['CGMINER_MONITOR_ALERTS_TEMPERATURE_MAX_C'] = '80'
+          expect(described_class.from_env(env).alerts_enabled).to be true
+        end
+      end
+
+      %w[0 false FALSE no off].each do |falsy|
+        it "accepts #{falsy.inspect} as false" do
+          env = valid_env.merge('CGMINER_MONITOR_ALERTS_ENABLED' => falsy)
+          expect(described_class.from_env(env).alerts_enabled).to be false
+        end
+      end
+
+      it 'raises ConfigError on unparseable bool' do
+        env = valid_env.merge('CGMINER_MONITOR_ALERTS_ENABLED' => 'maybe')
+        expect { described_class.from_env(env) }
+          .to raise_error(CgminerMonitor::ConfigError, /ALERTS_ENABLED must be a boolean/)
+      end
+    end
+
+    describe 'parse_optional_float' do
+      it 'returns nil when env key unset' do
+        config = described_class.from_env(valid_env)
+        expect(config.alerts_hashrate_min_ghs).to be_nil
+      end
+
+      it 'returns the float when parseable' do
+        env = valid_env.merge('CGMINER_MONITOR_ALERTS_HASHRATE_MIN_GHS' => '1234.5')
+        expect(described_class.from_env(env).alerts_hashrate_min_ghs).to eq 1234.5
+      end
+
+      it 'raises ConfigError when set-but-unparseable (distinguishes from unset)' do
+        env = valid_env.merge(
+          'CGMINER_MONITOR_ALERTS_ENABLED' => 'true',
+          'CGMINER_MONITOR_ALERTS_WEBHOOK_URL' => 'http://example.com/hook',
+          'CGMINER_MONITOR_ALERTS_TEMPERATURE_MAX_C' => '85c'
+        )
+        expect { described_class.from_env(env) }
+          .to raise_error(CgminerMonitor::ConfigError, /TEMPERATURE_MAX_C must be a valid float/)
+      end
+
+      it 'raises ConfigError when set but empty (distinguishes from unset)' do
+        env = valid_env.merge(
+          'CGMINER_MONITOR_ALERTS_ENABLED' => 'true',
+          'CGMINER_MONITOR_ALERTS_WEBHOOK_URL' => 'http://example.com/hook',
+          'CGMINER_MONITOR_ALERTS_TEMPERATURE_MAX_C' => ''
+        )
+        expect { described_class.from_env(env) }
+          .to raise_error(CgminerMonitor::ConfigError, /TEMPERATURE_MAX_C is set but empty/)
+      end
+    end
+
+    describe 'parse_optional_int' do
+      it 'returns the integer when parseable' do
+        env = valid_env.merge('CGMINER_MONITOR_ALERTS_OFFLINE_AFTER_SECONDS' => '600')
+        expect(described_class.from_env(env).alerts_offline_after_seconds).to eq 600
+      end
+
+      it 'raises ConfigError when set-but-unparseable' do
+        env = valid_env.merge(
+          'CGMINER_MONITOR_ALERTS_ENABLED' => 'true',
+          'CGMINER_MONITOR_ALERTS_WEBHOOK_URL' => 'http://example.com/hook',
+          'CGMINER_MONITOR_ALERTS_OFFLINE_AFTER_SECONDS' => '5m'
+        )
+        expect { described_class.from_env(env) }
+          .to raise_error(CgminerMonitor::ConfigError, /OFFLINE_AFTER_SECONDS must be a valid integer/)
+      end
+
+      it 'raises ConfigError when set but empty' do
+        env = valid_env.merge(
+          'CGMINER_MONITOR_ALERTS_ENABLED' => 'true',
+          'CGMINER_MONITOR_ALERTS_WEBHOOK_URL' => 'http://example.com/hook',
+          'CGMINER_MONITOR_ALERTS_OFFLINE_AFTER_SECONDS' => ''
+        )
+        expect { described_class.from_env(env) }
+          .to raise_error(CgminerMonitor::ConfigError, /OFFLINE_AFTER_SECONDS is set but empty/)
+      end
+    end
+
+    describe 'validate_alerts! (only runs when alerts_enabled=true)' do
+      it 'accepts a minimal valid config (one threshold, http URL, generic format)' do
+        config = described_class.from_env(alerts_env)
+        expect(config.alerts_enabled).to be true
+        expect(config.alerts_webhook_format).to eq 'generic'
+      end
+
+      it 'raises when webhook URL is missing' do
+        env = alerts_env.dup
+        env.delete('CGMINER_MONITOR_ALERTS_WEBHOOK_URL')
+        expect { described_class.from_env(env) }
+          .to raise_error(CgminerMonitor::ConfigError, /alerts_webhook_url is required/)
+      end
+
+      it 'raises when webhook URL has a non-http(s) scheme' do
+        env = alerts_env.merge('CGMINER_MONITOR_ALERTS_WEBHOOK_URL' => 'ftp://example.com/hook')
+        expect { described_class.from_env(env) }
+          .to raise_error(CgminerMonitor::ConfigError, /scheme must be http or https/)
+      end
+
+      it 'raises when webhook URL has no host (e.g. "http:/")' do
+        env = alerts_env.merge('CGMINER_MONITOR_ALERTS_WEBHOOK_URL' => 'http:/')
+        expect { described_class.from_env(env) }
+          .to raise_error(CgminerMonitor::ConfigError, /must include a host/)
+      end
+
+      it 'raises on unknown webhook format' do
+        env = alerts_env.merge('CGMINER_MONITOR_ALERTS_WEBHOOK_FORMAT' => 'teams')
+        expect { described_class.from_env(env) }
+          .to raise_error(CgminerMonitor::ConfigError, /alerts_webhook_format must be one of/)
+      end
+
+      it 'raises when cooldown is zero' do
+        env = alerts_env.merge('CGMINER_MONITOR_ALERTS_COOLDOWN_SECONDS' => '0')
+        expect { described_class.from_env(env) }
+          .to raise_error(CgminerMonitor::ConfigError, /alerts_cooldown_seconds must be > 0/)
+      end
+
+      it 'raises when timeout is zero' do
+        env = alerts_env.merge('CGMINER_MONITOR_ALERTS_WEBHOOK_TIMEOUT_SECONDS' => '0')
+        expect { described_class.from_env(env) }
+          .to raise_error(CgminerMonitor::ConfigError, /alerts_webhook_timeout_seconds must be > 0/)
+      end
+
+      it 'raises when enabled but no rule threshold configured' do
+        env = alerts_env.dup
+        env.delete('CGMINER_MONITOR_ALERTS_TEMPERATURE_MAX_C')
+        expect { described_class.from_env(env) }
+          .to raise_error(CgminerMonitor::ConfigError, /no rule threshold configured/)
+      end
+
+      it 'accepts each of the three rule thresholds independently' do
+        base = valid_env.merge(
+          'CGMINER_MONITOR_ALERTS_ENABLED' => 'true',
+          'CGMINER_MONITOR_ALERTS_WEBHOOK_URL' => 'http://example.com/hook'
+        )
+        expect do
+          described_class.from_env(base.merge('CGMINER_MONITOR_ALERTS_HASHRATE_MIN_GHS' => '1000'))
+        end.not_to raise_error
+        expect do
+          described_class.from_env(base.merge('CGMINER_MONITOR_ALERTS_TEMPERATURE_MAX_C' => '85'))
+        end.not_to raise_error
+        expect do
+          described_class.from_env(base.merge('CGMINER_MONITOR_ALERTS_OFFLINE_AFTER_SECONDS' => '600'))
+        end.not_to raise_error
+      end
+    end
+
+    describe 'when alerts_enabled=false, webhook URL and thresholds are not validated' do
+      it 'accepts nonsense webhook URL (disabled path)' do
+        env = valid_env.merge(
+          'CGMINER_MONITOR_ALERTS_WEBHOOK_URL' => 'totally bogus',
+          'CGMINER_MONITOR_ALERTS_WEBHOOK_FORMAT' => 'martian'
+        )
+        expect { described_class.from_env(env) }.not_to raise_error
+      end
+    end
+  end
+
+  describe 'restart-window-suppression config' do
+    it 'defaults restart_schedule_url to nil (feature disabled)' do
+      config = described_class.from_env(valid_env)
+      expect(config.restart_schedule_url).to be_nil
+    end
+
+    it 'defaults restart_window_grace_seconds to 300' do
+      config = described_class.from_env(valid_env)
+      expect(config.restart_window_grace_seconds).to eq(300)
+    end
+
+    it 'reads CGMINER_MONITOR_RESTART_SCHEDULE_URL when set' do
+      env = valid_env.merge(
+        'CGMINER_MONITOR_RESTART_SCHEDULE_URL' => 'http://manager.local:3000/api/v1/restart_schedules.json'
+      )
+      config = described_class.from_env(env)
+      expect(config.restart_schedule_url).to eq('http://manager.local:3000/api/v1/restart_schedules.json')
+    end
+
+    it 'parses CGMINER_MONITOR_RESTART_WINDOW_GRACE_SECONDS as an integer' do
+      env = valid_env.merge('CGMINER_MONITOR_RESTART_WINDOW_GRACE_SECONDS' => '600')
+      expect(described_class.from_env(env).restart_window_grace_seconds).to eq(600)
+    end
+
+    it 'rejects a non-http(s) restart_schedule_url' do
+      env = valid_env.merge('CGMINER_MONITOR_RESTART_SCHEDULE_URL' => 'ftp://manager/sched.json')
+      expect { described_class.from_env(env) }
+        .to raise_error(CgminerMonitor::ConfigError, /scheme must be http or https/)
+    end
+
+    it 'rejects a malformed restart_schedule_url' do
+      env = valid_env.merge('CGMINER_MONITOR_RESTART_SCHEDULE_URL' => 'http:/')
+      expect { described_class.from_env(env) }
+        .to raise_error(CgminerMonitor::ConfigError, /must include a host/)
+    end
+
+    it 'rejects a non-positive grace' do
+      env = valid_env.merge(
+        'CGMINER_MONITOR_RESTART_SCHEDULE_URL' => 'http://manager/sched.json',
+        'CGMINER_MONITOR_RESTART_WINDOW_GRACE_SECONDS' => '0'
+      )
+      expect { described_class.from_env(env) }
+        .to raise_error(CgminerMonitor::ConfigError, /grace_seconds/)
+    end
+  end
+
   describe '#public_attrs' do
     it 'redacts credentials from mongo_url' do
       env = valid_env.merge('CGMINER_MONITOR_MONGO_URL' => 'mongodb://user:secret@host:27017/db')

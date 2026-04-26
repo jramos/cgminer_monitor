@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---- Build stage ----
-FROM ruby:3.4-slim AS builder
+FROM ruby:4.0-slim AS builder
 
 RUN apt-get update -qq && \
     apt-get install -y --no-install-recommends build-essential git && \
@@ -13,13 +13,14 @@ COPY Gemfile cgminer_monitor.gemspec ./
 COPY lib/cgminer_monitor/version.rb lib/cgminer_monitor/version.rb
 
 RUN bundle config set --local without 'development' && \
+    bundle config set --local bin /usr/local/bundle/bin && \
     bundle install --jobs 4 && \
-    bundle binstubs cgminer_monitor --force --path /usr/local/bundle/bin
+    bundle binstubs cgminer_monitor --force
 
 COPY . .
 
 # ---- Runtime stage ----
-FROM ruby:3.4-slim
+FROM ruby:4.0-slim
 
 WORKDIR /app
 

@@ -14,7 +14,7 @@ RSpec.describe 'Full pipeline integration', :integration do
   let(:ctx) { {} }
 
   around do |example|
-    FakeCgminer.with do |port|
+    CgminerTestSupport::FakeCgminer.with do |port|
       ctx[:fake_port] = port
 
       FileUtils.mkdir_p(File.dirname(miners_file))
@@ -42,7 +42,7 @@ RSpec.describe 'Full pipeline integration', :integration do
     end
   end
 
-  it 'polls a FakeCgminer, writes to Mongo, and serves via HTTP' do
+  it 'polls a CgminerTestSupport::FakeCgminer, writes to Mongo, and serves via HTTP' do
     miner_id = "127.0.0.1:#{ctx[:fake_port]}"
 
     # --- Poll ---

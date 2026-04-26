@@ -225,6 +225,48 @@ RSpec.describe CgminerMonitor::Poller do
       poller.poll_once
       expect(poller.polls_ok).to eq 2
     end
+
+    it 'invokes the alert evaluator once per poll with the tick timestamp' do
+      evaluator = instance_double(CgminerMonitor::AlertEvaluator, evaluate: nil)
+      custom_poller = described_class.new(config, miner_pool: miner_pool, alert_evaluator: evaluator)
+      custom_poller.poll_once
+      expect(evaluator).to have_received(:evaluate).with(kind_of(Time)).once
+    end
+
+    it 'invokes the evaluator AFTER samples and snapshots are persisted' do
+      # Ordering invariant for the offline rule: evaluator reads the
+      # poll/ok sample this tick just wrote. A future refactor that
+      # moved the evaluator call before write_samples/write_snapshots
+      # would silently break that.
+      seen_sample_count = nil
+      seen_snapshot_count = nil
+      evaluator = instance_double(CgminerMonitor::AlertEvaluator)
+      allow(evaluator).to receive(:evaluate) do
+        seen_sample_count = CgminerMonitor::Sample.count
+        seen_snapshot_count = CgminerMonitor::Snapshot.count
+      end
+
+      custom_poller = described_class.new(config, miner_pool: miner_pool, alert_evaluator: evaluator)
+      custom_poller.poll_once
+
+      expect(seen_sample_count).to be_positive
+      expect(seen_snapshot_count).to be_positive
+    end
+
+    it 'swallows evaluator exceptions and logs alert.evaluator_error' do
+      broken = instance_double(CgminerMonitor::AlertEvaluator)
+      allow(broken).to receive(:evaluate).and_raise(StandardError, 'boom')
+      custom_poller = described_class.new(config, miner_pool: miner_pool, alert_evaluator: broken)
+
+      log = StringIO.new
+      CgminerMonitor::Logger.output = log
+      CgminerMonitor::Logger.level = 'error'
+
+      expect { custom_poller.poll_once }.not_to raise_error
+
+      events = log.string.lines.map { |l| JSON.parse(l) }.map { |l| l['event'] }
+      expect(events).to include('alert.evaluator_error')
+    end
   end
 
   describe 'failed miner poll' do
@@ -272,6 +314,79 @@ RSpec.describe CgminerMonitor::Poller do
     it 'does not raise — the loop continues' do
       expect { poller.poll_once }.not_to raise_error
     end
+
+    it 'emits code: from ApiError#code on poll.miner_failed (api errors carry a wire code)' do
+      events = []
+      allow(CgminerMonitor::Logger).to receive(:warn) { |entry| events << entry }
+      api_error = CgminerApiClient::ApiError.new('45: Access denied', cgminer_code: 45)
+      api_failure = CgminerApiClient::MinerResult.failure(miner, api_error)
+      %w[summary devs pools stats].each do |cmd|
+        allow(miner_pool).to receive(:query).with(cmd)
+                                            .and_return(CgminerApiClient::PoolResult.new([api_failure]))
+      end
+
+      poller.poll_once
+
+      failed = events.find { |e| e[:event] == 'poll.miner_failed' }
+      expect(failed[:code]).to eq(:access_denied)
+    end
+
+    it 'synthesizes :timeout for TimeoutError on poll.miner_failed (no wire code available)' do
+      events = []
+      allow(CgminerMonitor::Logger).to receive(:warn) { |entry| events << entry }
+      timeout = CgminerApiClient::TimeoutError.new('connect timeout')
+      timeout_failure = CgminerApiClient::MinerResult.failure(miner, timeout)
+      %w[summary devs pools stats].each do |cmd|
+        allow(miner_pool).to receive(:query).with(cmd)
+                                            .and_return(CgminerApiClient::PoolResult.new([timeout_failure]))
+      end
+
+      poller.poll_once
+
+      failed = events.find { |e| e[:event] == 'poll.miner_failed' }
+      expect(failed[:code]).to eq(:timeout)
+    end
+
+    it 'synthesizes :connection_error for ConnectionError on poll.miner_failed' do
+      events = []
+      allow(CgminerMonitor::Logger).to receive(:warn) { |entry| events << entry }
+      poller.poll_once
+
+      failed = events.find { |e| e[:event] == 'poll.miner_failed' }
+      expect(failed[:code]).to eq(:connection_error)
+    end
+
+    it 'emits :access_denied directly from AccessDeniedError subclass (not just base ApiError)' do
+      events = []
+      allow(CgminerMonitor::Logger).to receive(:warn) { |entry| events << entry }
+      access_denied = CgminerApiClient::AccessDeniedError.new('45: Access denied', cgminer_code: 45)
+      ad_failure = CgminerApiClient::MinerResult.failure(miner, access_denied)
+      %w[summary devs pools stats].each do |cmd|
+        allow(miner_pool).to receive(:query).with(cmd)
+                                            .and_return(CgminerApiClient::PoolResult.new([ad_failure]))
+      end
+
+      poller.poll_once
+
+      failed = events.find { |e| e[:event] == 'poll.miner_failed' }
+      expect(failed[:code]).to eq(:access_denied)
+    end
+
+    it 'falls through to :unexpected for any non-CgminerApiClient StandardError' do
+      events = []
+      allow(CgminerMonitor::Logger).to receive(:warn) { |entry| events << entry }
+      stray = StandardError.new('out of left field')
+      stray_failure = CgminerApiClient::MinerResult.failure(miner, stray)
+      %w[summary devs pools stats].each do |cmd|
+        allow(miner_pool).to receive(:query).with(cmd)
+                                            .and_return(CgminerApiClient::PoolResult.new([stray_failure]))
+      end
+
+      poller.poll_once
+
+      failed = events.find { |e| e[:event] == 'poll.miner_failed' }
+      expect(failed[:code]).to eq(:unexpected)
+    end
   end
 
   describe '#stop' do
@@ -305,6 +420,29 @@ RSpec.describe CgminerMonitor::Poller do
 
       expect(thread).not_to be_alive
       expect(poller.polls_ok).to be >= 1
+    end
+  end
+
+  describe '#build_alert_evaluator' do
+    it 'wires a RestartScheduleClient when restart_schedule_url is set' do
+      cfg = CgminerMonitor::Config.from_env(
+        'CGMINER_MONITOR_MINERS_FILE' => miners_file_path,
+        'CGMINER_MONITOR_RESTART_SCHEDULE_URL' => 'http://manager/sched.json',
+        'CGMINER_MONITOR_RESTART_WINDOW_GRACE_SECONDS' => '300'
+      )
+      poller = described_class.new(cfg, miner_pool: miner_pool)
+      evaluator = poller.instance_variable_get(:@alert_evaluator)
+      client = evaluator.instance_variable_get(:@restart_schedule_client)
+      expect(client).to be_a(CgminerMonitor::RestartScheduleClient)
+    end
+
+    it 'leaves restart_schedule_client nil when restart_schedule_url is unset' do
+      cfg = CgminerMonitor::Config.from_env(
+        'CGMINER_MONITOR_MINERS_FILE' => miners_file_path
+      )
+      poller = described_class.new(cfg, miner_pool: miner_pool)
+      evaluator = poller.instance_variable_get(:@alert_evaluator)
+      expect(evaluator.instance_variable_get(:@restart_schedule_client)).to be_nil
     end
   end
 

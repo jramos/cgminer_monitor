@@ -11,6 +11,7 @@ Consolidated context for AI coding assistants. For end-user docs, see [`README.m
 - [Running tests and lint](#running-tests-and-lint)
 - [Adding a new HTTP endpoint](#adding-a-new-http-endpoint)
 - [Adding a new extracted metric](#adding-a-new-extracted-metric)
+- [Adding a new alert rule](#adding-a-new-alert-rule)
 - [Ruby and Mongo version support](#ruby-and-mongo-version-support)
 - [Gotchas worth knowing up front](#gotchas-worth-knowing-up-front)
 - [Release process](#release-process)
@@ -24,9 +25,9 @@ Consolidated context for AI coding assistants. For end-user docs, see [`README.m
 
 A standalone Ruby daemon that polls [cgminer](https://github.com/ckolivas/cgminer) instances, stores device/pool/summary/stats data in MongoDB, and serves a read-only HTTP API. **Not** a Rails engine anymore — the 1.0 rewrite (April 2026) made it a plain foreground process run under a supervisor (systemd, Docker, launchd).
 
-**Stack:** Ruby 3.2+ (gemspec floor), MongoDB 5.0+ (time-series collections). Runtime deps: `cgminer_api_client ~> 0.3.0`, `mongoid ~> 9.0`, `sinatra >= 4.0`, `puma >= 6.0`, `rack-cors ~> 2.0`. Dev deps: `rspec`, `rubocop` (+ `-rake`, `-rspec`), `rack-test`, `rake`, `simplecov`.
+**Stack:** Ruby 3.2+ (gemspec floor), MongoDB 5.0+ (time-series collections). Runtime deps: `cgminer_api_client ~> 0.3.0`, `mongoid ~> 9.0`, `sinatra >= 4.0`, `puma >= 6.0`, `rack-cors ~> 2.0`. Webhook alerting uses stdlib `Net::HTTP` only — no new runtime gem. Dev deps: `rspec`, `rubocop` (+ `-rake`, `-rspec`), `rack-test`, `rake`, `simplecov`, `webmock >= 3.24` (used by webhook + alerts integration specs; load is scoped to those specs so the other integration specs keep their real-net posture).
 
-**Footprint:** ~1050 SLOC in `lib/`, ~2250 SLOC in `spec/`. Small, well-tested.
+**Footprint:** ~1680 SLOC in `lib/`, ~3420 SLOC in `spec/`. Small, well-tested.
 
 **Execution model:** CLI subcommand `cgminer_monitor run` starts one process with two threads — Poller (cgminer → Mongo) and Puma (HTTP out). SIGTERM/SIGINT → graceful shutdown with timeout, exit 0. Config validation failure → exit 78. Anything else bad → exit 1.
 
@@ -46,13 +47,16 @@ A standalone Ruby daemon that polls [cgminer](https://github.com/ckolivas/cgmine
 │   ├── snapshot.rb                 # Mongoid: latest_snapshot (regular, upserted per poll)
 │   ├── snapshot_query.rb           # Read-side: for_miner, miners, last_poll_at
 │   ├── poller.rb                   # Polling loop, sample extraction, bulk writes to Mongo
+│   ├── alert_evaluator.rb          # Per-miner threshold rules; runs after each poll; fires/resolves state
+│   ├── alert_state.rb              # Mongoid: alert_states (per-(miner, rule) state doc)
+│   ├── webhook_client.rb           # Stdlib Net::HTTP webhook POST w/ generic|slack|discord body
 │   ├── server.rb                   # Orchestrator: signals, Mongoid, Poller, Puma, shutdown
 │   ├── http_app.rb                 # Sinatra app: /v2/*, /metrics, /openapi.yml, /docs
 │   ├── openapi.yml                 # OpenAPI 3.1 (packaged, served at /openapi.yml, CI-guarded)
 │   └── version.rb                  # VERSION = "1.0.0"
 ├── spec/                           # RSpec unit + integration (NOT packaged)
-│   ├── cgminer_monitor/            # Unit specs, one per lib/ file
-│   ├── integration/                # full_pipeline, cli, healthz
+│   ├── cgminer_monitor/            # Unit specs, one per lib/ file (incl. alert_evaluator_spec, webhook_client_spec)
+│   ├── integration/                # full_pipeline, cli, healthz, alerts_integration
 │   ├── openapi_consistency_spec.rb # route ↔ openapi.yml parity guard
 │   └── support/                    # FakeCgminer, CgminerFixtures, mongo_helper
 ├── config/miners.yml.example       # NOT packaged (gemspec omits it deliberately)
@@ -88,7 +92,11 @@ bin/cgminer_monitor run
       │
       ├──spawn Poller thread ──► cgminer_api_client::MinerPool ──TCP──► cgminer instances
       │                              │
-      │                              └──► Sample.insert_many + Snapshot.bulk_write ──► Mongo
+      │                              ├──► Sample.insert_many + Snapshot.bulk_write ──► Mongo
+      │                              │
+      │                              └──► AlertEvaluator (post-poll) ──► AlertState upserts
+      │                                          │
+      │                                          └──► WebhookClient ──HTTPS──► webhook sink
       │
       └──spawn Puma thread ──► HttpApp ──► SampleQuery / SnapshotQuery ──► Mongo
 
@@ -104,6 +112,7 @@ bin/cgminer_monitor run
 5. **`Sample.store_in` is called at runtime**, not as a class macro, because the `expire_after` depends on `Config#retention_seconds`. `Sample.create_collection` is called explicitly so the collection is actually time-series (not a regular lazy-created one).
 6. **Poller bypasses `CgminerApiClient::MinerPool.new`** because that constructor hard-codes `'config/miners.yml'` relative to CWD — which doesn't honor `CGMINER_MONITOR_MINERS_FILE`. Uses `MinerPool.allocate` + manual `.miners=`.
 7. **OpenAPI is source of truth.** `spec/openapi_consistency_spec.rb` walks `HttpApp`'s routes and checks against `lib/cgminer_monitor/openapi.yml`. Adding/removing routes requires updating the YAML in the same commit.
+8. **Alerts are opt-in and post-poll.** `AlertEvaluator` runs *after* the `poll.complete` log line in the Poller thread (preserves `poll.complete` as a clean "poll finished and persisted" signal). Disabled by default (`CGMINER_MONITOR_ALERTS_ENABLED=false`); early-returns before any work. When enabled, reads the just-written `Snapshot` collection for hashrate/temperature and the `Sample` time-series for the offline rule's "seconds since last successful poll" — see `docs/components.md`/`docs/workflows.md`. Webhook POST is stdlib `Net::HTTP` with a 2s timeout, no retry; failures are logged as `alert.webhook_failed` and the poll loop continues. **Optionally**, when `CGMINER_MONITOR_RESTART_SCHEDULE_URL` points at `cgminer_manager`'s `/api/v1/restart_schedules.json`, the evaluator threads a `RestartScheduleClient` (`lib/cgminer_monitor/restart_schedule_client.rb`) that suppresses the `offline` rule for any miner inside its scheduled restart window so a nightly restart doesn't page on its way down. Fail-open: a manager outage yields an empty schedule map and monitor falls back to alerting normally on real outages.
 
 ## Conventions that matter when editing code
 
@@ -169,6 +178,8 @@ bundle exec rubocop -A                                 # lint + auto-correct
 
 **Coverage** is always on (SimpleCov in `spec_helper.rb`). Reports in `coverage/` — `.gitignore`d.
 
+**Mermaid validation.** Every `docs/*.md` may contain ` ```mermaid ` blocks. Run `script/validate_mermaid` to lint them all — the script extracts each block and pipes it through `npx @mermaid-js/mermaid-cli`. Requires `node >= 18` and `npx` on PATH. First run is slow (Puppeteer downloads Chromium into `~/.npm/_npx`, ~300 MB; cached after). Not wired into `bundle exec rake` — it's an opt-in local check for docs PRs.
+
 **Manual sandbox** without real miners:
 
 ```sh
@@ -210,6 +221,27 @@ bundle exec bin/cgminer_monitor run
 3. **For per-metric query helpers** (like `SampleQuery.hashrate`), add a method to `SampleQuery` that scopes by `meta.metric`. Update the relevant HTTP endpoint.
 4. **If the metric becomes part of Prometheus exposition**, update `HttpApp#build_prometheus_metrics` and add `# HELP` / `# TYPE` lines.
 5. **Tests:** exercise the new extraction via an integration spec using `FakeCgminer` fixtures, not just unit-level mocks.
+
+## Adding a new alert rule
+
+<!-- metadata: extending, how-to, alerts -->
+
+The alerts feature (see `docs/components.md` → AlertEvaluator) ships three rules: `hashrate_below`, `temperature_above`, `offline`. Adding a fourth means editing three places in lockstep:
+
+1. **Threshold config.** Add a `CGMINER_MONITOR_ALERTS_<NAME>` env var to the 8 already wired up in `lib/cgminer_monitor/config.rb` (search for `alerts_hashrate_min_ghs` to find the block). A `nil` default means the rule is opt-in per-deployment; the `validate_alerts!` helper already enforces "alerts_enabled=true requires at least one rule configured" across all rules in the block.
+
+2. **AlertEvaluator wiring** in `lib/cgminer_monitor/alert_evaluator.rb`:
+   - Add the rule name to the `RULES` constant.
+   - Add its unit to `UNITS` (so the webhook body's `unit` key is populated consistently).
+   - Add a `threshold_for` branch (maps rule → config field).
+   - Add a `violates?` branch (the comparison; `>`, `<`, `>=`, etc.).
+   - Extend `miner_states(now)` to populate the new reading per miner. **Defensively guard shape assumptions** in whatever `extract_*` helper you add — a `TypeError` from one malformed cgminer response would drop alert evaluation for every other miner on the tick. See the existing `extract_hashrate` / `extract_temperature` helpers for the `is_a?(Hash)` / `is_a?(Array)` pattern.
+
+3. **Docs + log schema.** Extend the reservation in `docs/log_schema.md` (the `alert.*` namespace) with the new rule name in the `rule` enum. Add a row to the env-var table in `docs/interfaces.md` and a paragraph in `docs/components.md`. If the rule needs a new standard key, reserve it there too.
+
+4. **Tests.** Cover all 7 transition-table rows (see `spec/cgminer_monitor/alert_evaluator_spec.rb`) for the new rule. Add a WebMock-stubbed case in `spec/integration/alerts_integration_spec.rb` if the rule's extraction is non-trivial.
+
+**Don't add severity tiers piecemeal.** The `severity` key in the webhook body is fixed to `"warning"` for v1; if a rule needs a `critical` tier, plan the full two-tier transition (config, body, and at least one receiver recipe) in one PR.
 
 ## Ruby and Mongo version support
 
@@ -276,8 +308,9 @@ Container images (Docker Hub / GHCR) are not currently pushed by CI. If that hap
 | How do the classes relate architecturally? Why two threads? Why this signal dance? | [`docs/architecture.md`](docs/architecture.md) |
 | What does each class do? | [`docs/components.md`](docs/components.md) |
 | What's the public method signature for X? HTTP endpoint Y? env var Z? | [`docs/interfaces.md`](docs/interfaces.md) |
-| What's in a `Sample`? What's in `latest_snapshot`? What errors can be raised? | [`docs/data_models.md`](docs/data_models.md) |
-| How does a poll cycle flow? How does startup/shutdown work? Release process? | [`docs/workflows.md`](docs/workflows.md) |
+| What's in a `Sample`? What's in `latest_snapshot`? What's in `alert_states`? What errors can be raised? | [`docs/data_models.md`](docs/data_models.md) |
+| How does a poll cycle flow? How does alert evaluation hook in? How does startup/shutdown work? Release process? | [`docs/workflows.md`](docs/workflows.md) |
+| Which log events does the app emit, which namespace, which keys? (`alert.*`, `poll.*`, etc.) | [`docs/log_schema.md`](docs/log_schema.md) |
 | Runtime deps? Why Mongo 5+? CI matrix? | [`docs/dependencies.md`](docs/dependencies.md) |
 | Known doc/code drift, caveats, cleanup recommendations | [`docs/review_notes.md`](docs/review_notes.md) |
 | Full knowledge-base index | [`docs/index.md`](docs/index.md) |

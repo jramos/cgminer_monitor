@@ -106,6 +106,7 @@ module CgminerMonitor
       )
       Sample.create_collection
       Snapshot.create_indexes
+      AlertState.create_indexes
     end
 
     private
