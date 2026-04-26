@@ -529,6 +529,185 @@ RSpec.describe CgminerMonitor::AlertEvaluator do
     end
   end
 
+  describe 'composite rules' do
+    let(:composite_id_str) { "#{miner_id}|thermal_stress" }
+
+    def composite_config(extra = {})
+      make_config({
+        'CGMINER_MONITOR_ALERTS_COMPOSITE_THERMAL_STRESS' => 'ghs_5s<500 & temp_max>80'
+      }.merge(extra))
+    end
+
+    def seed_violating
+      upsert_snapshot(miner: miner_id, command: 'summary',
+                      response: { 'SUMMARY' => [{ 'GHS 5s' => 450.0 }] })
+      upsert_snapshot(miner: miner_id, command: 'devs',
+                      response: { 'DEVS' => [{ 'Temperature' => 82.0 }] })
+    end
+
+    describe 'fired/resolved lifecycle' do
+      let(:config) { composite_config }
+
+      it 'fires alert.fired with composite-shaped threshold/observed/details on first violation' do
+        seed_violating
+        evaluator.evaluate(now)
+
+        state = CgminerMonitor::AlertState.find(composite_id_str)
+        expect(state.state).to eq 'violating'
+        expect(state.last_observed).to be_nil # composites use last_observed_components, not Float
+        expect(state.last_observed_components).to include('ghs_5s', 'temp_max')
+
+        expect(webhook_client).to have_received(:fire).with(
+          hash_including(
+            event: 'alert.fired',
+            rule: 'thermal_stress',
+            threshold: 'ghs_5s<500.0 & temp_max>80.0',
+            observed: 'ghs_5s=450.0 temp_max=82.0',
+            unit: nil,
+            details: hash_including('expression' => 'ghs_5s<500.0 & temp_max>80.0')
+          )
+        )
+      end
+
+      it 'does not re-fire on the next tick (state already violating, cooldown not elapsed)' do
+        seed_violating
+        evaluator.evaluate(now)
+        evaluator.evaluate(now + 30)
+        expect(webhook_client).to have_received(:fire).once
+      end
+
+      it 'fires alert.resolved when one clause clears (AND semantics → resolution on first clearing)' do
+        seed_violating
+        evaluator.evaluate(now)
+
+        # Temperature drops to safe — composite resolves even though hashrate still violates.
+        upsert_snapshot(miner: miner_id, command: 'devs',
+                        response: { 'DEVS' => [{ 'Temperature' => 70.0 }] })
+        evaluator.evaluate(now + 30)
+
+        state = CgminerMonitor::AlertState.find(composite_id_str)
+        expect(state.state).to eq 'ok'
+        expect(webhook_client).to have_received(:fire).with(
+          hash_including(event: 'alert.resolved', rule: 'thermal_stress')
+        )
+      end
+
+      it 're-fires after cooldown elapses while still violating' do
+        seed_violating
+        evaluator.evaluate(now)
+        evaluator.evaluate(now + 301) # cooldown defaults to 300s
+        expect(webhook_client).to have_received(:fire).twice.with(
+          hash_including(event: 'alert.fired', rule: 'thermal_stress')
+        )
+      end
+    end
+
+    describe 'reading bookkeeping — composite forces atom reads even when built-in is disabled' do
+      let(:config) do
+        # No CGMINER_MONITOR_ALERTS_TEMPERATURE_MAX_C set — built-in temp rule disabled,
+        # but the composite needs temp_max so the devs snapshot must still be read.
+        composite_config
+      end
+
+      it 'reads the devs snapshot for temp_max even though temperature_above is unset' do
+        seed_violating
+        expect(CgminerMonitor::Snapshot).to receive(:where)
+          .with(command: 'devs', ok: true).and_call_original
+        expect(CgminerMonitor::Snapshot).to receive(:where)
+          .with(command: 'summary', ok: true).and_call_original
+        evaluator.evaluate(now)
+      end
+    end
+
+    describe 'missing-atom semantics — skip the tick (NO state write, NO emit)' do
+      let(:config) { composite_config }
+
+      it 'does not transition a violating composite to ok when a required snapshot disappears' do
+        seed_violating
+        evaluator.evaluate(now)
+        expect(CgminerMonitor::AlertState.find(composite_id_str).state).to eq 'violating'
+
+        # Wipe the devs snapshot — temp_max becomes unreadable.
+        CgminerMonitor::Snapshot.where(miner: miner_id, command: 'devs').delete
+
+        evaluator.evaluate(now + 30)
+        # State unchanged; no resolved emitted.
+        expect(CgminerMonitor::AlertState.find(composite_id_str).state).to eq 'violating'
+        expect(webhook_client).to have_received(:fire).once # the original fire, no resolve
+      end
+
+      it 'does not create an ok state doc when a required reading is missing on first sight' do
+        upsert_snapshot(miner: miner_id, command: 'summary',
+                        response: { 'SUMMARY' => [{ 'GHS 5s' => 450.0 }] })
+        # No devs snapshot at all — temp_max is nil.
+        evaluator.evaluate(now)
+        expect(CgminerMonitor::AlertState.where(_id: composite_id_str).first).to be_nil
+      end
+    end
+
+    describe 'cooldown asymmetry — fires debounced, resolves emit unconditionally on transition' do
+      let(:config) { composite_config }
+
+      it 'can fire→resolve→fire within one cooldown window when conditions flap' do
+        # Tick 1: violating → fire
+        seed_violating
+        evaluator.evaluate(now)
+        # Tick 2: temp drops, composite resolves (resolves are NOT debounced)
+        upsert_snapshot(miner: miner_id, command: 'devs',
+                        response: { 'DEVS' => [{ 'Temperature' => 70.0 }] })
+        evaluator.evaluate(now + 30)
+        # Tick 3: temp re-rises well before cooldown elapsed (60s < 300s default),
+        # composite re-fires — cooldown only debounces violating→violating, and the
+        # state is now ok again so the next violation transition fires immediately.
+        upsert_snapshot(miner: miner_id, command: 'devs',
+                        response: { 'DEVS' => [{ 'Temperature' => 82.0 }] })
+        evaluator.evaluate(now + 60)
+
+        expect(webhook_client).to have_received(:fire).exactly(3).times
+        expect(webhook_client).to have_received(:fire).twice.with(hash_including(event: 'alert.fired'))
+        expect(webhook_client).to have_received(:fire).once.with(hash_including(event: 'alert.resolved'))
+      end
+    end
+
+    describe 'built-in + composite double-fire on the same observation (intentional)' do
+      let(:config) do
+        composite_config('CGMINER_MONITOR_ALERTS_TEMPERATURE_MAX_C' => '80')
+      end
+
+      it 'emits alert.fired for BOTH temperature_above and thermal_stress when both apply' do
+        seed_violating
+        # ghs_5s=450 doesn't trip a hashrate rule (not configured), but temp=82 trips
+        # the built-in temperature_above (>80) AND the thermal_stress composite.
+        evaluator.evaluate(now)
+
+        expect(webhook_client).to have_received(:fire).with(
+          hash_including(event: 'alert.fired', rule: 'temperature_above')
+        )
+        expect(webhook_client).to have_received(:fire).with(
+          hash_including(event: 'alert.fired', rule: 'thermal_stress')
+        )
+      end
+    end
+
+    describe 'startup config_loaded log line' do
+      let(:log_io) { StringIO.new }
+
+      it 'emits one alert.config_loaded line listing built-in rules and composite rule names' do
+        CgminerMonitor::Logger.output = log_io
+        CgminerMonitor::Logger.level = 'info'
+
+        described_class.new(composite_config('CGMINER_MONITOR_ALERTS_TEMPERATURE_MAX_C' => '80'),
+                            webhook_client: webhook_client)
+
+        loaded = log_io.string.lines.map { |l| JSON.parse(l) }
+                                    .find { |l| l['event'] == 'alert.config_loaded' }
+        expect(loaded).not_to be_nil
+        expect(loaded['built_in_rules']).to eq(['temperature_above'])
+        expect(loaded['composite_rules']).to eq(['thermal_stress'])
+      end
+    end
+  end
+
   describe 'alert.evaluation_complete' do
     let(:config) { make_config('CGMINER_MONITOR_ALERTS_HASHRATE_MIN_GHS' => '1000') }
     let(:log_io) { StringIO.new }
