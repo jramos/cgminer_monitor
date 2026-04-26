@@ -154,7 +154,11 @@ module CgminerMonitor
         miner_id, command,
         { "fetched_at" => now, "ok" => false, "response" => nil, "error" => error_msg }
       )
-      Logger.warn(event: 'poll.miner_failed', miner: miner_id, command: command, error: error_msg)
+      Logger.warn(event: 'poll.miner_failed',
+                  miner: miner_id,
+                  command: command,
+                  error: error_msg,
+                  code: miner_result ? code_for(miner_result.error) : :unexpected)
     end
 
     def append_synthetic_samples(miner_id, miner_ok, elapsed_ms, now, all_samples)
@@ -256,6 +260,20 @@ module CgminerMonitor
       @mutex.synchronize do
         @cv.wait(@mutex, seconds) unless @stopped
       end
+    end
+
+    # Maps a rescued exception to a single-symbol vocabulary for
+    # log-side dispatch. cgminer_api_client::ApiError (v0.4.0+)
+    # carries its own #code Symbol; transport-layer errors don't,
+    # so synthesize a parallel symbol so consumers can `case .code`
+    # uniformly. The six values match docs/log_schema.md's `code`
+    # standard-key entry.
+    def code_for(error)
+      return error.code if error.respond_to?(:code) && error.code.is_a?(Symbol)
+      return :timeout if error.is_a?(CgminerApiClient::TimeoutError)
+      return :connection_error if error.is_a?(CgminerApiClient::ConnectionError)
+
+      :unexpected
     end
   end
 end

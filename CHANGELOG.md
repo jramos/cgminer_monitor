@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.3] — 2026-04-25
+
+### Added
+- **`code` field on `poll.miner_failed`** — symbolic error tag for
+  log-side dispatch, populated from `cgminer_api_client::ApiError#code`
+  (v0.4.0+) for wire-side errors (e.g. `:access_denied`,
+  `:invalid_command`, `:unknown`) and synthesized at the rescue site
+  for transport-layer errors (`:timeout`, `:connection_error`) and
+  any unmapped exception (`:unexpected`). Six-symbol vocabulary
+  documented in `docs/log_schema.md`'s Standard-keys table. Operators
+  can now `jq 'select(.code == "access_denied")'` against monitor
+  logs instead of grep-ing English error message substrings.
+
 ### Changed
 - **`docs/log_schema.md`** gains a `code` standard key documenting the
   six-symbol vocabulary that consumers (`cgminer_monitor`,
@@ -15,9 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `invalid_command`, `unknown`, `timeout`, `connection_error`,
   `unexpected`. `poll.miner_failed` gains `code` as an optional
   field; `admin.result` gains `failed_codes` as an optional
-  count-by-code map (e.g. `{"access_denied": 3}`). Implementations
-  follow in upcoming `cgminer_monitor` and `cgminer_manager`
-  releases — schema is a forward-looking contract until then.
+  count-by-code map (e.g. `{"access_denied": 3}`). The
+  `admin.result` field will be populated by an upcoming
+  `cgminer_manager` release; in this gem, only `poll.miner_failed`
+  emits the new field.
 
 ## [1.3.2] — 2026-04-25
 
