@@ -106,14 +106,15 @@ module CgminerMonitor
     def evaluate_composite_rule(composite:, miner:, readings:, now:, counts:)
       violating = composite.violates?(readings)
       state_doc = AlertState.where(_id: AlertState.composite_id(miner, composite.name)).first
+      details   = composite.payload_details(readings)
       common = {
         miner: miner, rule: composite.name,
         observed: composite.payload_observed(readings),
         threshold: composite.payload_threshold,
         unit: nil, now: now, state_doc: state_doc,
         # Composites carry per-clause structure on the wire AND in state.
-        details: composite.payload_details(readings),
-        last_observed_components: composite.payload_details(readings)['clauses']
+        details: details,
+        last_observed_components: details['clauses']
       }
 
       if violating
@@ -255,6 +256,17 @@ module CgminerMonitor
       { 'ghs_5s' => nil, 'temp_max' => nil, 'offline_seconds' => nil }
     end
 
+    # Names every currently-enabled rule that consumes the
+    # `offline_seconds` atom. Drives the per-rule emit on
+    # `alert.suppressed_during_restart_window` so the operator sees
+    # one row per affected rule, not a hardcoded `rule: 'offline'`.
+    def rules_consuming_offline_atom
+      built_ins = threshold_for('offline').nil? ? [] : ['offline']
+      composites = @config.composite_rules.select { |c| c.required_metrics.include?('offline_seconds') }
+                                          .map(&:name)
+      built_ins + composites
+    end
+
     # True when at least one rule (built-in or composite) consumes
     # the atom — drives whether `miner_states` bothers reading the
     # underlying snapshot/sample at all.
@@ -291,8 +303,14 @@ module CgminerMonitor
         # blanket-suppress real outages.
         if @restart_schedule_client&.in_restart_window?(miner, now)
           atom_readings[miner]['offline_seconds'] = nil
-          Logger.info(event: 'alert.suppressed_during_restart_window',
-                      miner: miner, rule: 'offline')
+          # Emit one suppression log per rule that consumes the atom
+          # so a composite-only deployment doesn't see a misleading
+          # `rule: 'offline'` row referencing a built-in they didn't
+          # configure.
+          rules_consuming_offline_atom.each do |rule|
+            Logger.info(event: 'alert.suppressed_during_restart_window',
+                        miner: miner, rule: rule)
+          end
           next
         end
 

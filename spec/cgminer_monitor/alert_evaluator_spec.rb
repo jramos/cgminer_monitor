@@ -416,6 +416,48 @@ RSpec.describe CgminerMonitor::AlertEvaluator do
           hash_including(rule: 'hashrate_below')
         )
       end
+
+      it 'emits one suppression log per rule that consumes offline_seconds (built-in + composites)' do
+        log_io = StringIO.new
+        CgminerMonitor::Logger.output = log_io
+        CgminerMonitor::Logger.level = 'info'
+
+        composite_config = make_config(
+          'CGMINER_MONITOR_ALERTS_OFFLINE_AFTER_SECONDS' => '600',
+          'CGMINER_MONITOR_ALERTS_COMPOSITE_COLD_DEAD' => 'ghs_5s<100 & offline_seconds>60'
+        )
+        evaluator = described_class.new(composite_config,
+                                        webhook_client: webhook_client,
+                                        restart_schedule_client: restart_schedule_client)
+        evaluator.evaluate(now)
+
+        suppression_lines = log_io.string.lines.map { |l| JSON.parse(l) }
+                                               .select { |l| l['event'] == 'alert.suppressed_during_restart_window' }
+        rules = suppression_lines.map { |l| l['rule'] }
+        expect(rules).to contain_exactly('offline', 'cold_dead')
+      end
+
+      it 'omits the built-in `offline` suppression row when only composites consume offline_seconds' do
+        log_io = StringIO.new
+        CgminerMonitor::Logger.output = log_io
+        CgminerMonitor::Logger.level = 'info'
+
+        # No CGMINER_MONITOR_ALERTS_OFFLINE_AFTER_SECONDS — built-in offline rule disabled.
+        composite_only_config = CgminerMonitor::Config.from_env(
+          base_env.merge(
+            'CGMINER_MONITOR_ALERTS_COMPOSITE_COLD_DEAD' => 'ghs_5s<100 & offline_seconds>60'
+          )
+        )
+        evaluator = described_class.new(composite_only_config,
+                                        webhook_client: webhook_client,
+                                        restart_schedule_client: restart_schedule_client)
+        evaluator.evaluate(now)
+
+        suppression_lines = log_io.string.lines.map { |l| JSON.parse(l) }
+                                               .select { |l| l['event'] == 'alert.suppressed_during_restart_window' }
+        rules = suppression_lines.map { |l| l['rule'] }
+        expect(rules).to eq(['cold_dead']) # NOT 'offline' — that built-in is disabled
+      end
     end
 
     context 'with a restart_schedule_client reporting the miner is NOT in its window' do
