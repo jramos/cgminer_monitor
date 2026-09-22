@@ -433,7 +433,7 @@ RSpec.describe CgminerMonitor::AlertEvaluator do
         evaluator.evaluate(now)
 
         suppression_lines = log_io.string.lines.map { |l| JSON.parse(l) }
-                                               .select { |l| l['event'] == 'alert.suppressed_during_restart_window' }
+                                  .select { |l| l['event'] == 'alert.suppressed_during_restart_window' }
         rules = suppression_lines.map { |l| l['rule'] }
         expect(rules).to contain_exactly('offline', 'cold_dead')
         # v1.5.0+: every suppression event carries a `cause:` discriminator.
@@ -457,7 +457,7 @@ RSpec.describe CgminerMonitor::AlertEvaluator do
         evaluator.evaluate(now)
 
         suppression_lines = log_io.string.lines.map { |l| JSON.parse(l) }
-                                               .select { |l| l['event'] == 'alert.suppressed_during_restart_window' }
+                                  .select { |l| l['event'] == 'alert.suppressed_during_restart_window' }
         rules = suppression_lines.map { |l| l['rule'] }
         expect(rules).to eq(['cold_dead']) # NOT 'offline' — that built-in is disabled
       end
@@ -484,7 +484,7 @@ RSpec.describe CgminerMonitor::AlertEvaluator do
         evaluator.evaluate(now)
 
         suppression_lines = log_io.string.lines.map { |l| JSON.parse(l) }
-                                               .select { |l| l['event'] == 'alert.suppressed_during_restart_window' }
+                                  .select { |l| l['event'] == 'alert.suppressed_during_restart_window' }
         expect(suppression_lines.map { |l| l['cause'] }).to all(eq('drain'))
         expect(webhook_client).not_to have_received(:fire).with(hash_including(rule: 'offline'))
       end
@@ -504,7 +504,7 @@ RSpec.describe CgminerMonitor::AlertEvaluator do
         evaluator.evaluate(now)
 
         suppression_lines = log_io.string.lines.map { |l| JSON.parse(l) }
-                                               .select { |l| l['event'] == 'alert.suppressed_during_restart_window' }
+                                  .select { |l| l['event'] == 'alert.suppressed_during_restart_window' }
         rules = suppression_lines.map { |l| l['rule'] }
         expect(rules).to contain_exactly('offline', 'cold_dead')
         expect(suppression_lines.map { |l| l['cause'] }).to all(eq('drain'))
@@ -532,7 +532,7 @@ RSpec.describe CgminerMonitor::AlertEvaluator do
         evaluator.evaluate(now)
 
         suppression_lines = log_io.string.lines.map { |l| JSON.parse(l) }
-                                               .select { |l| l['event'] == 'alert.suppressed_during_restart_window' }
+                                  .select { |l| l['event'] == 'alert.suppressed_during_restart_window' }
         expect(suppression_lines.map { |l| l['cause'] }).to all(eq('restart_window'))
       end
     end
@@ -820,7 +820,7 @@ RSpec.describe CgminerMonitor::AlertEvaluator do
                             webhook_client: webhook_client)
 
         loaded = log_io.string.lines.map { |l| JSON.parse(l) }
-                                    .find { |l| l['event'] == 'alert.config_loaded' }
+                       .find { |l| l['event'] == 'alert.config_loaded' }
         expect(loaded).not_to be_nil
         expect(loaded['built_in_rules']).to eq(['temperature_above'])
         expect(loaded['composite_rules']).to eq(['thermal_stress'])
