@@ -284,7 +284,7 @@ RSpec.describe CgminerMonitor::Config do
         env.delete('CGMINER_MONITOR_ALERTS_TEMPERATURE_MAX_C')
         expect { described_class.from_env(env) }
           .to raise_error(CgminerMonitor::ConfigError) do |e|
-            expect(e.message).to match(/no rule configured/)
+            expect(e.message).to include('no rule configured')
             # Operator must see all four ways to satisfy the validation.
             expect(e.message).to include('CGMINER_MONITOR_ALERTS_HASHRATE_MIN_GHS')
             expect(e.message).to include('CGMINER_MONITOR_ALERTS_TEMPERATURE_MAX_C')

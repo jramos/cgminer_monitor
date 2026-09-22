@@ -263,7 +263,7 @@ module CgminerMonitor
     def rules_consuming_offline_atom
       built_ins = threshold_for('offline').nil? ? [] : ['offline']
       composites = @config.composite_rules.select { |c| c.required_metrics.include?('offline_seconds') }
-                                          .map(&:name)
+                          .map(&:name)
       built_ins + composites
     end
 

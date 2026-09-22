@@ -70,8 +70,8 @@ RSpec.describe CgminerMonitor::CompositeRule do
       end
       expect(err).not_to be_nil
       # Each clause has problems; the aggregated message should reference all of them.
-      expect(err.message).to match(/foo/)
-      expect(err.message).to match(/baz/)
+      expect(err.message).to include('foo')
+      expect(err.message).to include('baz')
     end
   end
 

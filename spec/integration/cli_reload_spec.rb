@@ -24,7 +24,7 @@ RSpec.describe 'bin/cgminer_monitor reload', type: :integration do
     _, err, status = Open3.capture3(env, 'bundle', 'exec', 'bin/cgminer_monitor', 'reload',
                                     chdir: File.expand_path('../..', __dir__))
     expect(status.exitstatus).not_to eq(0)
-    expect(err).to match(/CGMINER_MONITOR_PID_FILE/)
+    expect(err).to include('CGMINER_MONITOR_PID_FILE')
   ensure
     FileUtils.rm_rf(dir)
   end
